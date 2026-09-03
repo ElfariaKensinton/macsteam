@@ -1,0 +1,7 @@
+// Version
+#ifndef MACSTEAM_VERSION_H
+#define MACSTEAM_VERSION_H
+
+#define MACSTEAM_VERSION "0.7.0"
+
+#endif // MACSTEAM_VERSION_H
