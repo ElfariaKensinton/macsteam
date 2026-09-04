@@ -1,0 +1,129 @@
+name: macSteam arm64 Release Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "Publish this build as a GitHub Release"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: macSteam arm64 Release Build
+    runs-on: xcode-27
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          timestamp="$(date -u '+%Y%m%d-%H%M%S')"
+          short_sha="${GITHUB_SHA::7}"
+          echo "tag=dev-${timestamp}-${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "name=macSteam Development ${timestamp} (${short_sha})" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Xcode toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Fetch Dobby
+        run: git clone --depth 1 https://github.com/jmpews/Dobby.git vendor/dobby
+
+      - name: Build Dobby
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf build/vendor/dobby
+          cmake -S vendor/dobby -B build/vendor/dobby \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DDOBBY_DEBUG=OFF \
+            -DDOBBY_BUILD_EXAMPLE=OFF \
+            -DDOBBY_BUILD_TEST=OFF \
+            -G "Unix Makefiles"
+          cmake --build build/vendor/dobby --parallel "$(sysctl -n hw.ncpu)"
+
+      - name: Verify Dobby outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for archive in \
+            build/vendor/dobby/libdobby.a \
+            build/vendor/dobby/builtin-plugin/SymbolResolver/libdobby_symbol_resolver.a \
+            build/vendor/dobby/builtin-plugin/SymbolResolver/libmacho_ctx_kit.a \
+            build/vendor/dobby/builtin-plugin/SymbolResolver/libshared_cache_ctx_kit.a \
+            build/vendor/dobby/external/osbase/libosbase.a \
+            build/vendor/dobby/external/logging/liblogging.a; do
+            test -f "$archive"
+          done
+
+      - name: Build dylib
+        run: make rebuild
+
+      - name: Remove invalid Swift test target
+        shell: bash
+        working-directory: macsteam-app
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("Package.swift")
+          s = p.read_text()
+          bad = '''        .testTarget(\n            name: "MacsteamAppTests",\n            dependencies: ["MacsteamApp"],\n            path: "Tests/MacsteamAppTests"\n        )\n'''
+          if bad not in s:
+              raise SystemExit("expected invalid MacsteamAppTests target not found")
+          s = s.replace(",\n" + bad.rstrip("\n"), "")
+          p.write_text(s)
+          PY
+
+      - name: Build macSteam Config.app
+        working-directory: macsteam-app
+        run: bash make_app.sh
+
+      - name: Verify ad-hoc signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          codesign --verify --deep --strict "macsteam-app/macSteam Config.app"
+          codesign --verify --strict "out/macsteam.dylib"
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent \
+            "macsteam-app/macSteam Config.app" \
+            "dist/macSteam-Config-${GITHUB_SHA::7}.zip"
+          cp "out/macsteam.dylib" "dist/macsteam-${GITHUB_SHA::7}.dylib"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macsteam-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: inputs.publish_release == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          RELEASE_NAME: ${{ steps.meta.outputs.name }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" dist/* \
+            --title "$RELEASE_NAME" \
+            --notes "Automated development build from ${GITHUB_SHA}."
