@@ -35,6 +35,7 @@ SRCS := src/core/loader.c \
         src/feats/schema_owners.c \
         src/feats/depot.c \
         src/feats/ticket.c \
+        src/feats/onlinefix.c \
         src/util/log.c \
         src/util/file.c \
         src/util/hex.c \
@@ -44,6 +45,7 @@ SRCS := src/core/loader.c \
         src/resolver/sigdb.c \
         src/resolver/resolver.c \
         src/hooks/hooks.c \
+        src/hooks/hook_onlinefix.c \
         src/hooks/hook_apps.c \
         src/hooks/hook_depot.c \
         src/hooks/hook_dlc.c \
@@ -63,7 +65,7 @@ TARGET      := $(OUT_DIR)/macsteam.dylib
 OBJS     := $(patsubst %.c,$(OUT_DIR)/%.o,$(SRCS))
 DEPS     := $(OBJS:.o=.d)
 
-.PHONY: all clean rebuild test probe
+.PHONY: all clean rebuild test probe onlinefix_probe
 
 all: $(TARGET)
 
@@ -103,6 +105,17 @@ AOB_PROBE_BIN := $(OUT_DIR)/tests/aob_probe
 ANCHOR_PROBE_SRC := tests/anchor_probe.c
 ANCHOR_PROBE_BIN := $(OUT_DIR)/tests/anchor_probe
 
+ONLINEFIX_PROBE_SRC := tests/onlinefix_probe.c
+ONLINEFIX_PROBE_BIN := $(OUT_DIR)/tests/onlinefix_probe
+
+onlinefix_probe: $(ONLINEFIX_PROBE_BIN)
+	@$(ONLINEFIX_PROBE_BIN)
+
+$(ONLINEFIX_PROBE_BIN): $(ONLINEFIX_PROBE_SRC) src/feats/onlinefix.c src/feats/onlinefix.h src/util/log.c
+	@mkdir -p $(dir $@)
+	$(CC) -std=c17 -Wall -Wextra -Isrc -o $@ $(ONLINEFIX_PROBE_SRC) src/feats/onlinefix.c src/util/log.c
+	@echo "==> Built OnlineFix probe: $@"
+
 probe:
 	@if [ -f "$(PROBE_SRC)" ]; then $(MAKE) $(PROBE_BIN); \
 	 else echo "==> No local tests, skipping probe."; fi
@@ -127,7 +140,7 @@ $(ANCHOR_PROBE_BIN): $(ANCHOR_PROBE_SRC) src/resolver/anchor.c src/core/macho.c 
 	$(CC) -std=c17 -Wall -Wextra -Isrc -o $@ $(ANCHOR_PROBE_SRC) src/util/log.c src/util/file.c
 	@echo "==> Built probe: $@"
 
-test:
+test: onlinefix_probe
 	@if [ ! -d macsteam-app/Tests ]; then echo "==> No local tests, skipping."; exit 0; fi; \
 	 $(MAKE) $(PROBE_BIN) $(STATS_PROBE_BIN) $(AOB_PROBE_BIN) $(ANCHOR_PROBE_BIN); \
 	 echo "==> Running C stats-resolver probe..."; \

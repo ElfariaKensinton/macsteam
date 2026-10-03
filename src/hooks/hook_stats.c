@@ -4,6 +4,7 @@
 #include "../feats/schema_owners.h"
 #include "../constants.h"
 #include "../util/log.h"
+#include "../feats/onlinefix.h"
 #include <stdint.h>
 
 #define MSG_BODY_OFF          0x30
@@ -63,31 +64,41 @@ static int hook_sendAndRecv(void *self, void *send, uint32_t a2,
         return orig(self, send, a2, timeOut, recv, targetType);
 
     sx_config_t *cfg = sx_config_current;
-    int appId = (int)(*(uint64_t *)(send_body + SEND_GAME_ID_OFF) & 0xFFFFFF);
-    if (!cfg || !sx_config_has_app(cfg, appId))
+    uint64_t original_game_id = *(uint64_t *)(send_body + SEND_GAME_ID_OFF);
+    int appId = (int)(original_game_id & 0xFFFFFF);
+    int translated = (int)sx_onlinefix_translate_appid((uint32_t)appId);
+    if (!cfg || !sx_config_has_app(cfg, translated))
         return orig(self, send, a2, timeOut, recv, targetType);
+
+    if (translated != appId) {
+        *(uint64_t *)(send_body + SEND_GAME_ID_OFF) =
+            (original_game_id & ~0xFFFFFFULL) | (uint64_t)(uint32_t)translated;
+        SX_DBG("[stats] onlinefix app %d -> %d for stats request", appId, translated);
+    }
 
     uint64_t original = *(uint64_t *)(send_body + SEND_STEAMID_OFF);
 
-    uint64_t pref = sx_schema_owners_preferred(appId);
+    uint64_t pref = sx_schema_owners_preferred(translated);
     if (pref && try_owner(self, send, a2, timeOut, recv,
                           send_body, recv_body, pref)) {
         recv_keep_schema_only(recv_body);
-        SX_DBG("[stats] app %d: schema via preferred owner %llu", appId,
+        *(uint64_t *)(send_body + SEND_GAME_ID_OFF) = original_game_id;
+        SX_DBG("[stats] app %d: schema via preferred owner %llu", translated,
                (unsigned long long)pref);
         return 1;
     }
 
     sx_owner_list_t reviewers;
-    sx_schema_owners_get(appId, &reviewers);
+    sx_schema_owners_get(translated, &reviewers);
     for (int i = 0; i < reviewers.count; i++) {
         uint64_t owner = reviewers.ids[i];
         if (owner == pref) continue;
         if (try_owner(self, send, a2, timeOut, recv,
                       send_body, recv_body, owner)) {
             recv_keep_schema_only(recv_body);
-            sx_schema_owners_set_preferred(appId, owner);
-            SX_LOG("[stats] app %d: schema via reviewer %llu", appId,
+            sx_schema_owners_set_preferred(translated, owner);
+            *(uint64_t *)(send_body + SEND_GAME_ID_OFF) = original_game_id;
+            SX_LOG("[stats] app %d: schema via reviewer %llu", translated,
                    (unsigned long long)owner);
             return 1;
         }
@@ -95,7 +106,8 @@ static int hook_sendAndRecv(void *self, void *send, uint32_t a2,
     }
 
     *(uint64_t *)(send_body + SEND_STEAMID_OFF) = original;
-    SX_DBG("[stats] app %d: no owner schema, passthrough", appId);
+    *(uint64_t *)(send_body + SEND_GAME_ID_OFF) = original_game_id;
+    SX_DBG("[stats] app %d: no owner schema, passthrough", translated);
     return orig(self, send, a2, timeOut, recv, targetType);
 }
 
@@ -117,7 +129,8 @@ static int worker_wants_redirect(uintptr_t job, uint64_t *owner_out) {
     sx_config_t *cfg = sx_config_current;
     if (!cfg || sx_hook_passthrough("RequestUserStats.worker")) return 0;
     int appId = worker_appid(job);
-    if (!sx_config_has_app(cfg, appId)) return 0;
+    int translated = (int)sx_onlinefix_translate_appid((uint32_t)appId);
+    if (!sx_config_has_app(cfg, translated)) return 0;
 
     uint64_t owner = sx_schema_owners_preferred(appId);
     if (!owner) {
@@ -137,13 +150,20 @@ static int hook_worker(void *job) {
     if (!worker_wants_redirect(j, &owner))
         return orig(job);
 
-    uint64_t original = *(uint64_t *)(j + JOB_STEAMID_OFF);
-    *(uint64_t *)(j + JOB_STEAMID_OFF) = owner;
-    int ret = orig(job);
-    *(uint64_t *)(j + JOB_STEAMID_OFF) = original;
+    uint32_t rawAppId=(uint32_t)worker_appid(j);
+    uint32_t translated=sx_onlinefix_translate_appid(rawAppId);
+    uint64_t original_game_id=*(uint64_t *)(j+JOB_GAMEID_OFF);
+    if (translated!=rawAppId && sx_config_current && sx_config_has_app(sx_config_current,(int)translated))
+        *(uint64_t *)(j+JOB_GAMEID_OFF)=(original_game_id&~0xFFFFFFULL)|(uint64_t)translated;
 
-    SX_LOG("[stats] app %d: unified schema via owner %llu (worker ret=%d)",
-           worker_appid(j), (unsigned long long)owner, ret);
+    uint64_t original=*(uint64_t *)(j+JOB_STEAMID_OFF);
+    *(uint64_t *)(j+JOB_STEAMID_OFF)=owner;
+    int ret=orig(job);
+    *(uint64_t *)(j+JOB_STEAMID_OFF)=original;
+    *(uint64_t *)(j+JOB_GAMEID_OFF)=original_game_id;
+
+    SX_LOG("[stats] app %u: unified schema via owner %llu (worker ret=%d)",
+           translated,(unsigned long long)owner,ret);
     return ret;
 }
 
@@ -158,10 +178,11 @@ static void instrument_worker_resp(void *address, void *ctx_) {
     sx_config_t *cfg = sx_config_current;
     if (!cfg || sx_hook_passthrough("RequestUserStats.worker")) return;
     int appId = worker_appid(job);
-    if (!sx_config_has_app(cfg, appId)) return;
+    int translated = (int)sx_onlinefix_translate_appid((uint32_t)appId);
+    if (!sx_config_has_app(cfg, translated)) return;
 
     uint32_t *count = (uint32_t *)(ctx->sp + WORKER_RESP_COUNT_SP_OFF);
-    SX_LOG("[stats] app %d: cleared %u owner stat(s) from reply", appId, *count);
+    SX_LOG("[stats] app %d: cleared %u owner stat(s) from reply", translated, *count);
     *count = 0;
 }
 

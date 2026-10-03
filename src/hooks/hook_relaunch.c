@@ -1,6 +1,8 @@
 // Relaunch persistence
 #include "hooks.h"
 #include "../util/log.h"
+#include "../config/config.h"
+#include "../feats/onlinefix.h"
 
 #include <spawn.h>
 #include <string.h>
@@ -128,8 +130,19 @@ static void trace_exec(const char *api, const char *path, char *const argv[], ch
            envp ? "" : " (envp NULL, cannot tell from here)");
 }
 
+static int maybe_track_onlinefix_launch(char *const argv[], char *const envp[]) {
+    sx_config_t *cfg=sx_config_current;
+    int flag=sx_onlinefix_has_flag(argv);
+    uint32_t app_id=0;
+    int have=sx_onlinefix_find_appid(argv,envp,&app_id);
+    if(flag&&have&&cfg&&sx_config_has_app(cfg,(int)app_id)){sx_onlinefix_activate(app_id,"process-spawn");return 1;}
+    if(!flag&&have&&cfg&&sx_config_has_app(cfg,(int)app_id)&&sx_onlinefix_active()&&sx_onlinefix_real_appid()!=app_id)sx_onlinefix_reset();
+    return 0;
+}
+
 static int hook_execv(const char *path, char *const argv[]) {
     trace_exec("execv", path, argv, NULL);
+    maybe_track_onlinefix_launch(argv, NULL);
     char **nv = maybe_rewrite(argv);
     if (nv) {
         int rc = orig_execv(path, nv);
@@ -141,16 +154,19 @@ static int hook_execv(const char *path, char *const argv[]) {
 
 static int hook_execve(const char *path, char *const argv[], char *const envp[]) {
     trace_exec("execve", path, argv, envp);
-    char **nv = maybe_rewrite(argv);
-    if (nv) {
-        int rc = orig_execve(path, nv, envp);
-        free_rewrite(nv);
-        return rc;
+    int route=maybe_track_onlinefix_launch(argv, envp);
+    char **clean_env=target_keeps_insert(path)?NULL:strip_dyld_insert(envp);
+    char **base_env=clean_env?clean_env:envp;
+    char **route_env=route?sx_onlinefix_rewrite_env(base_env,sx_onlinefix_real_appid()):NULL;
+    if(route_env){free(clean_env);clean_env=route_env;}
+    char **nv=maybe_rewrite(argv);
+    if(nv){
+        int rc=orig_execve(path,nv,clean_env?(char *const *)clean_env:envp);
+        if(route_env)sx_onlinefix_free_env(clean_env);else free(clean_env);
+        free_rewrite(nv);return rc;
     }
-    char **clean_env = target_keeps_insert(path) ? NULL : strip_dyld_insert(envp);
-    int rc = orig_execve(path, argv,
-                         clean_env ? (char *const *)clean_env : envp);
-    free(clean_env);
+    int rc=orig_execve(path,argv,clean_env?(char *const *)clean_env:envp);
+    if(route_env)sx_onlinefix_free_env(clean_env);else free(clean_env);
     return rc;
 }
 
@@ -159,16 +175,19 @@ static int hook_posix_spawn(pid_t *pid, const char *path,
                             const posix_spawnattr_t *attr,
                             char *const argv[], char *const envp[]) {
     trace_exec("posix_spawn", path, argv, envp);
-    char **nv = maybe_rewrite(argv);
-    if (nv) {
-        int rc = orig_posix_spawn(pid, path, fa, attr, nv, envp);
-        free_rewrite(nv);
-        return rc;
+    int route=maybe_track_onlinefix_launch(argv,envp);
+    char **clean_env=target_keeps_insert(path)?NULL:strip_dyld_insert(envp);
+    char **base_env=clean_env?clean_env:envp;
+    char **route_env=route?sx_onlinefix_rewrite_env(base_env,sx_onlinefix_real_appid()):NULL;
+    if(route_env){free(clean_env);clean_env=route_env;}
+    char **nv=maybe_rewrite(argv);
+    if(nv){
+        int rc=orig_posix_spawn(pid,path,fa,attr,nv,clean_env?(char *const *)clean_env:envp);
+        if(route_env)sx_onlinefix_free_env(clean_env);else free(clean_env);
+        free_rewrite(nv);return rc;
     }
-    char **clean_env = target_keeps_insert(path) ? NULL : strip_dyld_insert(envp);
-    int rc = orig_posix_spawn(pid, path, fa, attr, argv,
-                              clean_env ? (char *const *)clean_env : envp);
-    free(clean_env);
+    int rc=orig_posix_spawn(pid,path,fa,attr,argv,clean_env?(char *const *)clean_env:envp);
+    if(route_env)sx_onlinefix_free_env(clean_env);else free(clean_env);
     return rc;
 }
 

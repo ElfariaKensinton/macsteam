@@ -1,6 +1,7 @@
 // Ticket trickery
 #include "ticket.h"
 #include "../config/config.h"
+#include "onlinefix.h"
 #include "../util/log.h"
 #include <string.h>
 #include <stdint.h>
@@ -77,10 +78,11 @@ int sx_ticket_serve_extended(void *server_this, void *reqReader, void *respWrite
 
     uint32_t req_appId = 0, req_cbMax = 0, req_fence = 0;
     utlbuf_read(reqReader, &req_appId, 4);
+    uint32_t target_appId = sx_onlinefix_translate_appid(req_appId);
     utlbuf_read(reqReader, &req_cbMax, 4);
     utlbuf_read(reqReader, &req_fence, 4);
 
-    if (!should_forge(req_appId)) {
+    if (!should_forge(target_appId) {
         if (req_cbMax == 0 || req_cbMax > MAX_TICKET_BUF)
             return 0;
 
@@ -89,7 +91,7 @@ int sx_ticket_serve_extended(void *server_this, void *reqReader, void *respWrite
 
         uint32_t offAppId = 0, offSteamId = 0, offSig = 0, sigSize = 0;
         fn_get_ticket_impl impl = *(fn_get_ticket_impl *)(*(uintptr_t *)server_this + IMPL_VTABLE_SLOT);
-        int64_t ret = impl(server_this, req_appId, ticket_buf, req_cbMax,
+        int64_t ret = impl(server_this, target_appId, ticket_buf, req_cbMax,
                            &offAppId, &offSteamId, &offSig, &sigSize);
 
         serialize_response(respWriter, ret, ticket_buf, req_cbMax,
@@ -98,6 +100,7 @@ int sx_ticket_serve_extended(void *server_this, void *reqReader, void *respWrite
         return 1;
     }
 
+    if(target_appId!=req_appId)SX_LOG("[onlinefix] ticket: appid %u -> %u",req_appId,target_appId);
     uint8_t *source_buf = (uint8_t *)calloc(1, MAX_TICKET_BUF);
     if (!source_buf) return 0;
 
@@ -131,7 +134,7 @@ int sx_ticket_serve_extended(void *server_this, void *reqReader, void *respWrite
     if (!forged) { free(source_buf); return 0; }
 
     memcpy(forged, source_buf, body_len);
-    memcpy(forged + body_len, &req_appId, 4);
+    memcpy(forged + body_len, &target_appId, 4);
     memcpy(forged + body_len + 4, source_buf + body_len, sig_size);
 
     uint32_t reported_size = (uint32_t)src_len;
@@ -142,8 +145,8 @@ int sx_ticket_serve_extended(void *server_this, void *reqReader, void *respWrite
                        body_len + 4,
                        sig_size);
 
-    SX_LOG("GetAppOwnershipTicketExtendedData: FORGED app %u (source=7, bodyLen=%u, sigOff=%u->%u, physical=%u, reported=%u)",
-           req_appId, body_len, src_off_sig, body_len + 4, forged_physical, reported_size);
+    SX_LOG("GetAppOwnershipTicketExtendedData: FORGED app %u -> %u (source=7, bodyLen=%u, sigOff=%u->%u, physical=%u, reported=%u)",
+           req_appId, target_appId, body_len, src_off_sig, body_len + 4, forged_physical, reported_size);
 
     free(forged);
     free(source_buf);

@@ -20,6 +20,9 @@ typedef struct {
     int          kind;
 } sx_hook_def_t;
 
+int  sx_hooks_onlinefix_count(void);
+sx_hook_def_t *sx_hooks_onlinefix_defs(void);
+
 int  sx_hooks_apps_count(void);
 sx_hook_def_t *sx_hooks_apps_defs(void);
 void sx_hooks_apps_force_ready(void);

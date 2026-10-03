@@ -2,6 +2,7 @@
 #include "hooks.h"
 #include "../config/config.h"
 #include "../util/log.h"
+#include "../feats/onlinefix.h"
 #include <stdint.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <CFNetwork/CFNetwork.h>
@@ -68,16 +69,17 @@ static uint32_t hook_GetManifestRequestCode(void *self, uint32_t app_id,
                                               uint32_t depot_id, uint64_t manifest_id,
                                               const char *branch, uint64_t *pRequestCode) {
     sx_config_t *g_cfg = sx_config_current;
+    uint32_t query_app_id = sx_onlinefix_translate_appid(app_id);
     fn_GetManifestRequestCode orig =
         (fn_GetManifestRequestCode)orig_GetManifestRequestCode;
 
-    if (g_cfg && sx_config_has_app(g_cfg, (int)app_id)) {
+    if (g_cfg && sx_config_has_app(g_cfg, (int)query_app_id)) {
         uint64_t code = 0;
         if (fetch_manifest_code(manifest_id, &code) == 0 && pRequestCode) {
             *pRequestCode = code;
             SX_LOG_ONCE_KEY(depot_id,
                     "GetManifestRequestCode: app=%u depot=%u manifest=0x%llx -> opensteamtool code=0x%llx",
-                    app_id, depot_id, (unsigned long long)manifest_id,
+                    query_app_id, depot_id, (unsigned long long)manifest_id,
                     (unsigned long long)code);
             return 1;
         }
@@ -87,7 +89,7 @@ static uint32_t hook_GetManifestRequestCode(void *self, uint32_t app_id,
                 app_id, depot_id, (unsigned long long)manifest_id);
     }
 
-    return orig(self, app_id, depot_id, manifest_id, branch, pRequestCode);
+    return orig(self, query_app_id, depot_id, manifest_id, branch, pRequestCode);
 }
 
 

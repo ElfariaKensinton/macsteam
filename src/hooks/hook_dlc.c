@@ -2,6 +2,7 @@
 #include "hooks.h"
 #include "../feats/dlc.h"
 #include "../core/ctx.h"
+#include "../feats/onlinefix.h"
 #include <stdint.h>
 
 void sx_hooks_ctx_set_helpers(uintptr_t getappid) {
@@ -13,9 +14,10 @@ typedef int (*fn_IsAppDlcInstalled)(void *self, uint32_t app_id, uint32_t dlc_id
 
 static int hook_IsAppDlcInstalled(void *self, uint32_t app_id, uint32_t dlc_id) {
     fn_IsAppDlcInstalled orig = (fn_IsAppDlcInstalled)orig_IsAppDlcInstalled;
-    int result = orig(self, app_id, dlc_id);
+    uint32_t query_app_id = sx_onlinefix_translate_appid(app_id);
+    int result = orig(self, query_app_id, dlc_id);
 
-    return sx_dlc_is_installed(self, app_id, dlc_id, result);
+    return sx_dlc_is_installed(self, query_app_id, dlc_id, result);
 }
 
 
@@ -28,9 +30,10 @@ static int hook_BGetDLCDataByIndex(void *self, uint32_t app_id, int index,
                                     uint32_t *pDlcId, int *pAvailable,
                                     char *pName, int nameLen) {
     fn_BGetDLCDataByIndex orig = (fn_BGetDLCDataByIndex)orig_BGetDLCDataByIndex;
-    int result = orig(self, app_id, index, pDlcId, pAvailable, pName, nameLen);
+    uint32_t query_app_id = sx_onlinefix_translate_appid(app_id);
+    int result = orig(self, query_app_id, index, pDlcId, pAvailable, pName, nameLen);
 
-    return sx_dlc_force_available(self, app_id, index, pDlcId, pAvailable, result);
+    return sx_dlc_force_available(self, query_app_id, index, pDlcId, pAvailable, result);
 }
 
 
@@ -42,9 +45,10 @@ static int hook_IsUserSubscribedAppInTicket(void *self, uint64_t steam_id,
                                             uint32_t app_id) {
     fn_IsUserSubscribedAppInTicket orig =
         (fn_IsUserSubscribedAppInTicket)orig_IsUserSubscribedAppInTicket;
-    int result = orig(self, steam_id, app_id);
+    uint32_t query_app_id = sx_onlinefix_translate_appid(app_id);
+    int result = orig(self, steam_id, query_app_id);
 
-    return sx_dlc_user_subscribed_in_ticket(self, app_id, result);
+    return sx_dlc_user_subscribed_in_ticket(self, query_app_id, result);
 }
 
 

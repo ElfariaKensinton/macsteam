@@ -3,6 +3,7 @@
 #include "../feats/apps.h"
 #include "../config/config.h"
 #include "../util/log.h"
+#include "../feats/onlinefix.h"
 #include "../core/reconcile.h"
 #include "../core/session.h"
 #include "../steam_types.h"
@@ -27,7 +28,8 @@ typedef int (*fn_CheckAppOwnership)(void *self, uint32_t appId, void *out);
 
 static int hook_CheckAppOwnership(void *self, uint32_t appId, void *out) {
     fn_CheckAppOwnership orig = (fn_CheckAppOwnership)orig_CheckAppOwnership;
-    int result = orig(self, appId, out);
+    uint32_t queryAppId = sx_onlinefix_translate_appid(appId);
+    int result = orig(self, queryAppId, out);
 
     if (sx_hook_passthrough("CheckAppOwnership"))
         return result;
@@ -42,7 +44,7 @@ static int hook_CheckAppOwnership(void *self, uint32_t appId, void *out) {
     if (self) g_app_mgr = self;
     sx_reconcile_fire_library_refresh(g_app_mgr);
 
-    return sx_apps_spoof_ownership(appId, result, (AppOwnershipInfo_t *)out,
+    return sx_apps_spoof_ownership(queryAppId, result, (AppOwnershipInfo_t *)out,
                                    sx_session_account_id());
 }
 
@@ -51,12 +53,14 @@ typedef int (*fn_BIsAppOwnedForDepot)(void *self, uint32_t appId, uint32_t depot
 
 static int hook_BIsAppOwnedForDepot(void *self, uint32_t appId, uint32_t depotCtxAppId) {
     fn_BIsAppOwnedForDepot orig = (fn_BIsAppOwnedForDepot)orig_BIsAppOwnedForDepot;
-    int result = orig(self, appId, depotCtxAppId);
+    uint32_t queryAppId = sx_onlinefix_translate_appid(appId);
+    uint32_t queryDepotCtxAppId = sx_onlinefix_translate_appid(depotCtxAppId);
+    int result = orig(self, queryAppId, queryDepotCtxAppId);
 
     if (sx_hook_passthrough("BIsAppOwnedForDepot"))
         return result;
 
-    return sx_apps_is_owned_for_depot(appId, depotCtxAppId, result);
+    return sx_apps_is_owned_for_depot(queryAppId, queryDepotCtxAppId, result);
 }
 
 
@@ -78,12 +82,13 @@ typedef int (*fn_BIsSubscribedApp)(void *self, uint32_t appId);
 
 static int hook_BIsSubscribedApp(void *self, uint32_t appId) {
     fn_BIsSubscribedApp orig = (fn_BIsSubscribedApp)orig_BIsSubscribedApp;
-    int result = orig(self, appId);
+    uint32_t queryAppId = sx_onlinefix_translate_appid(appId);
+    int result = orig(self, queryAppId);
 
     if (sx_hook_passthrough("BIsSubscribedApp"))
         return result;
 
-    return sx_apps_is_subscribed(appId, result);
+    return sx_apps_is_subscribed(queryAppId, result);
 }
 
 

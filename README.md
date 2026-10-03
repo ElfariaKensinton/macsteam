@@ -12,6 +12,12 @@ Other than that one thing, this is an original work. It is _not_ a port of OpenS
 
 Manifests for injected games are fetched from the OpenSteamTool endpoint, as needed. I didn't want to build my own manifest delivery endpoint, theirs has been reliable [EDIT: this aged well!] so it is used. Open source stuff and all that.
 
+## Online Fix
+
+Configured games can opt into the Steam 480 (Spacewar) lobby route by adding `-onlinefix` to Steam launch options. macSteam detects the launch in the existing process-spawn hooks, records the real AppID, launches the child with `SteamAppId`/`SteamGameId` set to 480, keeps `SteamOverlayGameId` on the real AppID, and translates 480 back to the configured game for Steam ownership, DLC, manifest, statistics, and ownership-ticket paths.
+
+The route is process-wide, matching OpenSteamTool's single-active-game behavior. Starting another configured game without `-onlinefix` clears the active route.
+
 ## How?
 
 1. The config app deploys a dylib 'into' the Steam app bundle. 

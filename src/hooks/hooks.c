@@ -38,6 +38,7 @@ typedef struct {
 } sx_hook_module_t;
 
 static const sx_hook_module_t g_modules[] = {
+    { "onlinefix", sx_hooks_onlinefix_count, sx_hooks_onlinefix_defs },
     { "apps",     sx_hooks_apps_count,     sx_hooks_apps_defs     },
     { "depot",    sx_hooks_depot_count,    sx_hooks_depot_defs    },
     { "dlc",      sx_hooks_dlc_count,      sx_hooks_dlc_defs      },
