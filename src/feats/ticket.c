@@ -82,7 +82,7 @@ int sx_ticket_serve_extended(void *server_this, void *reqReader, void *respWrite
     utlbuf_read(reqReader, &req_cbMax, 4);
     utlbuf_read(reqReader, &req_fence, 4);
 
-    if (!should_forge(target_appId) {
+    if (!should_forge(target_appId)) {
         if (req_cbMax == 0 || req_cbMax > MAX_TICKET_BUF)
             return 0;
 
