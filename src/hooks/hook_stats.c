@@ -102,7 +102,7 @@ static int hook_sendAndRecv(void *self, void *send, uint32_t a2,
                    (unsigned long long)owner);
             return 1;
         }
-        sx_schema_owners_blacklist(appId, owner);
+        sx_schema_owners_blacklist(translated, owner);
     }
 
     *(uint64_t *)(send_body + SEND_STEAMID_OFF) = original;
@@ -132,10 +132,10 @@ static int worker_wants_redirect(uintptr_t job, uint64_t *owner_out) {
     int translated = (int)sx_onlinefix_translate_appid((uint32_t)appId);
     if (!sx_config_has_app(cfg, translated)) return 0;
 
-    uint64_t owner = sx_schema_owners_preferred(appId);
+    uint64_t owner = sx_schema_owners_preferred(translated);
     if (!owner) {
         sx_owner_list_t reviewers;
-        sx_schema_owners_get(appId, &reviewers);
+        sx_schema_owners_get(translated, &reviewers);
         if (reviewers.count > 0) owner = reviewers.ids[0];
     }
     if (!owner) return 0;
