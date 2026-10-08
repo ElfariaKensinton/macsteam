@@ -383,14 +383,15 @@ final class HubcapViewController: NSViewController {
         setBusy(true, status: "Downloading Lua for \(game.name)…")
 
         Task {
-            var luaURL: URL?
             do {
-                luaURL = try await client.downloadLua(appID: appID, apiKey: key)
-                guard let luaURL else { throw HubcapInstallError.downloadEmpty }
+                let luaText = try await client.downloadLuaText(appID: appID, apiKey: key)
 
                 setStatus("Installing \(game.name)…", tone: .neutral)
                 let plan = try await Task.detached(priority: .userInitiated) {
-                    try ZipImporter.buildPlan(fromLua: luaURL)
+                    try ZipImporter.buildPlan(
+                        fromLuaText: luaText,
+                        source: URL(fileURLWithPath: "hubcap-\(appID).lua")
+                    )
                 }.value
 
                 guard plan.mainAppID == appID else {
@@ -401,16 +402,13 @@ final class HubcapViewController: NSViewController {
                     _ = ZipImporter.merge(plan, into: &cfg)
                 }
 
+                ZipImporter.cleanup(plan.extractDir)
                 onConfigChanged()
                 setBusy(false)
                 setStatus("Installed \(game.name) into macSteam.", tone: .ok)
             } catch {
                 setBusy(false)
                 setStatus(error.localizedDescription, tone: .bad)
-            }
-
-            if let luaURL {
-                try? FileManager.default.removeItem(at: luaURL)
             }
         }
     }
