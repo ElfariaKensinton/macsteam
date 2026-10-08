@@ -713,12 +713,13 @@ final class HubcapViewController: NSViewController {
         let hubcapClient = client
         usageTask = Task { [weak self, hubcapClient] in
             do {
-                let usage = try await hubcapClient.usage(apiKey: key)
+                let stats = try await hubcapClient.userStats(apiKey: key)
                 guard !Task.isCancelled else { return }
                 guard HubcapCredentialStore.apiKey == key else { return }
-                self?.apiStatusTitle?.stringValue = "Connected • \(usage.single.usage)"
+                self?.apiStatusTitle?.stringValue =
+                    "Connected • \(stats.dailyUsage)/\(stats.dailyLimit)"
             } catch {
-                // Keep the connected state visible even if the usage endpoint is unavailable.
+                // Keep the connected state visible if daily usage statistics are unavailable.
             }
         }
     }
