@@ -7,6 +7,8 @@ final class HubcapViewController: NSViewController {
 
     // Keep all Hubcap API behavior in HubcapClient. This view only orchestrates UI state.
     private let client = HubcapClient()
+    private let libraryCache = HubcapLibraryCache()
+    private var cacheRefreshTask: Task<Void, Never>?
     private var apiStatusIcon: NSImageView!
     private var apiStatusTitle: NSTextField!
     private var apiStatusDetail: NSTextField!
@@ -110,13 +112,14 @@ final class HubcapViewController: NSViewController {
         apiStatusDetail.font = Typography.caption
         apiStatusDetail.textColor = Colors.secondaryText
         apiStatusDetail.translatesAutoresizingMaskIntoConstraints = false
+        apiStatusDetail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let apiText = NSStackView(views: [apiStatusTitle, apiStatusDetail])
         apiText.orientation = .vertical
         apiText.alignment = .leading
         apiText.spacing = 2
         apiText.translatesAutoresizingMaskIntoConstraints = false
-        apiText.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        apiText.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         apiSettingsButton = makeButton(
             title: "Settings",
@@ -124,24 +127,24 @@ final class HubcapViewController: NSViewController {
             action: #selector(openHubcapSettings)
         )
 
-        let apiContent = NSStackView(views: [apiStatusIcon, apiText, apiSettingsButton])
-        apiContent.orientation = .horizontal
-        apiContent.alignment = .centerY
-        apiContent.spacing = 10
-        apiContent.translatesAutoresizingMaskIntoConstraints = false
-        apiSettingsButton.setContentHuggingPriority(.required, for: .horizontal)
-
         let apiCard = makeCard()
-        apiCard.addSubview(apiContent)
+        apiCard.addSubview(apiStatusIcon)
+        apiCard.addSubview(apiText)
+        apiCard.addSubview(apiSettingsButton)
 
         NSLayoutConstraint.activate([
-            apiContent.topAnchor.constraint(equalTo: apiCard.topAnchor, constant: 14),
-            apiContent.leadingAnchor.constraint(equalTo: apiCard.leadingAnchor, constant: 14),
-            apiContent.trailingAnchor.constraint(equalTo: apiCard.trailingAnchor, constant: -14),
-            apiContent.bottomAnchor.constraint(equalTo: apiCard.bottomAnchor, constant: -14),
-
+            apiStatusIcon.leadingAnchor.constraint(equalTo: apiCard.leadingAnchor, constant: 14),
+            apiStatusIcon.centerYAnchor.constraint(equalTo: apiCard.centerYAnchor),
             apiStatusIcon.widthAnchor.constraint(equalToConstant: 12),
             apiStatusIcon.heightAnchor.constraint(equalToConstant: 12),
+
+            apiText.leadingAnchor.constraint(equalTo: apiStatusIcon.trailingAnchor, constant: 10),
+            apiText.topAnchor.constraint(equalTo: apiCard.topAnchor, constant: 11),
+            apiText.bottomAnchor.constraint(equalTo: apiCard.bottomAnchor, constant: -11),
+            apiText.trailingAnchor.constraint(lessThanOrEqualTo: apiSettingsButton.leadingAnchor, constant: -12),
+
+            apiSettingsButton.trailingAnchor.constraint(equalTo: apiCard.trailingAnchor, constant: -14),
+            apiSettingsButton.centerYAnchor.constraint(equalTo: apiCard.centerYAnchor),
         ])
 
         // MARK: Search
@@ -323,23 +326,27 @@ final class HubcapViewController: NSViewController {
     override func viewDidAppear() {
         super.viewDidAppear()
 
-        let stored = HubcapCredentialStore.apiKey ?? ""
-
         updateInstalledMetric()
         updateAPIStatus()
 
-        guard !stored.isEmpty else {
-            setStatus("Connect Hubcap with an API key to start browsing.", tone: .neutral)
+        guard HubcapCredentialStore.apiKey != nil else {
+            setStatus("Connect Hubcap in Settings to start browsing.", tone: .neutral)
             return
         }
 
-        if allGames.isEmpty {
-            loadLibrary(reset: true)
-        } else {
-            games = allGames
-            tableView.reloadData()
-            scheduleSearch()
-        }
+        loadCachedLibraryThenStart()
+    }
+
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        // The full database refresh is intentionally allowed to continue while the Hubcap
+        // controller remains owned by MainViewController. It is cancelled only if the
+        // controller itself is released.
+    }
+
+    deinit {
+        cacheRefreshTask?.cancel()
+        searchTask?.cancel()
     }
 
     // MARK: Hubcap settings
@@ -462,7 +469,12 @@ final class HubcapViewController: NSViewController {
     @objc private func refreshLibrary() {
         guard !isBusy else { return }
         searchTask?.cancel()
-        loadLibrary(reset: true)
+
+        if HubcapCredentialStore.apiKey != nil {
+            refreshLibraryDatabaseInBackground()
+        } else {
+            loadLibrary(reset: true)
+        }
     }
 
     @objc private func loadMoreLibrary() {
@@ -485,69 +497,176 @@ final class HubcapViewController: NSViewController {
         if query.isEmpty {
             games = allGames
             tableView.reloadData()
+            resultCountLabel.stringValue = allGames.isEmpty ? "No games" : "(allGames.count) shown"
             emptyState.configure(
                 symbol: "books.vertical",
                 prompt: "Browse the Hubcap library",
-                hint: "Search for a game or scroll through the catalog."
+                hint: "Search for a game or App ID."
             )
             updateEmptyState()
             updateCatalogStatus()
             return
         }
 
-        guard query.count >= 3 else {
+        guard query.count >= 2 else {
             games.removeAll()
             tableView.reloadData()
             resultCountLabel.stringValue = "Keep typing…"
             emptyState.configure(
                 symbol: "text.magnifyingglass",
-                prompt: "Search needs 3 characters",
-                hint: "Enter a game title or App ID."
+                prompt: "Search needs 2 characters",
+                hint: "Search by game title or App ID."
             )
             emptyState.isHidden = false
-            setStatus("Enter at least 3 characters to search Hubcap.", tone: .neutral)
             return
         }
 
-        guard let key = currentKey() else { return }
+        let normalized = query.localizedLowercase
+        let isAppID = query.allSatisfy(.isNumber)
 
-        let isAppID = query.allSatisfy({ $0.isNumber })
+        games = allGames.filter { game in
+            if isAppID {
+                return game.id == query
+            }
+            return game.name.localizedLowercase.contains(normalized)
+                || game.id.contains(query)
+        }
+        games = deduplicateAndSort(games)
 
-        searchTask = Task { [weak self] in
+        resultCountLabel.stringValue = games.isEmpty
+            ? "No matches"
+            : "(games.count) result(games.count == 1 ? "" : "s")"
+
+        emptyState.configure(
+            symbol: "magnifyingglass",
+            prompt: "No games found",
+            hint: "Try another title or App ID."
+        )
+        emptyState.isHidden = !games.isEmpty
+        setStatus(
+            games.isEmpty ? "No games matched your search." : "(games.count) local result(s).",
+            tone: games.isEmpty ? .neutral : .ok
+        )
+        tableView.reloadData()
+    }
+
+    private func loadCachedLibraryThenStart() {
+        Task { [weak self] in
             guard let self else { return }
 
-            do {
-                try await Task.sleep(nanoseconds: 300_000_000)
-                if Task.isCancelled { return }
+            let snapshot = await libraryCache.load()
 
-                setBusy(true, status: "Searching Hubcap…")
-
-                let results = try await client.searchGames(
-                    query: query,
-                    apiKey: key,
-                    appID: isAppID
-                )
-                if Task.isCancelled { return }
-
-                games = deduplicateAndSort(results)
+            if let snapshot {
+                games = deduplicateAndSort(snapshot.games)
+                allGames = games
+                totalCount = snapshot.totalCount
+                loadedOffset = games.count
                 tableView.reloadData()
-                resultCountLabel.stringValue = resultSummary(count: games.count, search: query)
+                resultCountLabel.stringValue = "(games.count) cached games"
                 emptyState.configure(
-                    symbol: "magnifyingglass",
-                    prompt: "No games found",
-                    hint: "Try a different title or App ID."
+                    symbol: "books.vertical",
+                    prompt: "Hubcap library",
+                    hint: "Search the local database while Hubcap updates in the background."
                 )
-                emptyState.isHidden = !games.isEmpty
-                setBusy(false)
-                    setStatus(
-                    games.isEmpty ? "No Hubcap games matched that search." : "(games.count) result(s) from Hubcap.",
-                    tone: games.isEmpty ? .neutral : .ok
+                updateEmptyState()
+                setStatus(
+                    "Loaded (games.count) games from the local database. Updating in background…",
+                    tone: .ok
                 )
+                scheduleSearch()
+            }
+
+            if snapshot == nil && allGames.isEmpty {
+                loadLibrary(reset: true)
+            }
+
+            refreshLibraryDatabaseInBackground()
+        }
+    }
+
+    private func refreshLibraryDatabaseInBackground() {
+        guard !isRefreshingCache,
+              let key = HubcapCredentialStore.apiKey else { return }
+
+        cacheRefreshTask?.cancel()
+        cacheRefreshTask = Task.detached(priority: .utility) { [client, libraryCache] in
+            do {
+                var offset = 0
+                var totalCount = 0
+                var collected: [HubcapGame] = []
+                var lastStatusUpdate = Date.distantPast
+
+                while !Task.isCancelled {
+                    let page = try await client.libraryPage(
+                        apiKey: key,
+                        limit: 1000,
+                        offset: offset
+                    )
+
+                    if offset == 0 {
+                        totalCount = page.totalCount
+                    }
+
+                    collected.append(contentsOf: page.games)
+                    offset += page.games.count
+
+                    if page.games.isEmpty || offset >= page.totalCount {
+                        break
+                    }
+
+                    if Date().timeIntervalSince(lastStatusUpdate) >= 2 {
+                        lastStatusUpdate = Date()
+                        let progress = page.totalCount == 0
+                            ? 0
+                            : Int((Double(offset) / Double(page.totalCount)) * 100)
+
+                        await MainActor.run { [weak self] in
+                            guard let self, !self.isBusy else { return }
+                            self.setStatus(
+                                "Updating Hubcap database… (progress)%",
+                                tone: .neutral
+                            )
+                        }
+                    }
+                }
+
+                let snapshot = HubcapLibrarySnapshot(
+                    updatedAt: Date(),
+                    totalCount: totalCount,
+                    games: collected
+                )
+                try await libraryCache.save(snapshot)
+
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    self.allGames = self.deduplicateAndSort(collected)
+                    self.totalCount = totalCount
+                    self.loadedOffset = collected.count
+                    self.games = self.allGames
+                    self.tableView.reloadData()
+                    self.resultCountLabel.stringValue = "(self.allGames.count) games"
+                    self.emptyState.configure(
+                        symbol: "books.vertical",
+                        prompt: "Hubcap library",
+                        hint: "Search the local database."
+                    )
+                    self.updateEmptyState()
+                    self.setStatus(
+                        "Hubcap database updated — (self.allGames.count) games available offline.",
+                        tone: .ok
+                    )
+                    self.scheduleSearch()
+                }
             } catch is CancellationError {
-                return
+                // Refresh was superseded.
             } catch {
-                setBusy(false)
-                setStatus(error.localizedDescription, tone: .bad)
+                await MainActor.run { [weak self] in
+                    guard let self, !self.isBusy else { return }
+                    self.setStatus(
+                        "Using the saved Hubcap database. Background update failed: (error.localizedDescription)",
+                        tone: .warn
+                    )
+                }
             }
         }
     }
@@ -579,7 +698,7 @@ final class HubcapViewController: NSViewController {
                 // API endpoint, pagination size, and request semantics are unchanged.
                 let page = try await client.libraryPage(
                     apiKey: key,
-                    limit: 1000,
+                    limit: 100,
                     offset: offset
                 )
 
@@ -677,6 +796,10 @@ final class HubcapViewController: NSViewController {
     }
 
     // MARK: Helpers
+
+    private var isRefreshingCache: Bool {
+        cacheRefreshTask != nil && !(cacheRefreshTask?.isCancelled ?? true)
+    }
 
     private func currentKey() -> String? {
         guard let key = HubcapCredentialStore.apiKey else {
