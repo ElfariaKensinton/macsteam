@@ -360,19 +360,18 @@ final class HubcapViewController: NSViewController {
 
     @objc private func openHubcapSettings() {
         let alert = NSAlert()
-        alert.messageText = "Hubcap Settings"
-        alert.informativeText = "Add your Hubcap API key."
-
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 62))
+        alert.messageText = "Hubcap API"
+        
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 390, height: 30))
 
         let keyField = NSSecureTextField()
-        keyField.placeholderString = "Hubcap API key"
+        keyField.placeholderString = "Paste API key"
         keyField.stringValue = HubcapCredentialStore.apiKey ?? ""
         keyField.translatesAutoresizingMaskIntoConstraints = false
         keyField.setAccessibilityLabel("Hubcap API key")
 
         let openURLButton = NSButton(
-            title: "Open API key page",
+            title: "Get API key",
             target: self,
             action: #selector(openAPIKeys)
         )
@@ -381,29 +380,19 @@ final class HubcapViewController: NSViewController {
         openURLButton.translatesAutoresizingMaskIntoConstraints = false
         styleSecondaryButton(openURLButton)
 
-        let hint = NSTextField(labelWithString: "Stored locally in macSteam.")
-        hint.font = Typography.caption
-        hint.textColor = Colors.secondaryText
-        hint.translatesAutoresizingMaskIntoConstraints = false
-
         container.addSubview(keyField)
-        container.addSubview(hint)
         container.addSubview(openURLButton)
 
         NSLayoutConstraint.activate([
-            keyField.topAnchor.constraint(equalTo: container.topAnchor),
             keyField.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            keyField.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            keyField.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             keyField.heightAnchor.constraint(equalToConstant: 28),
-
-            hint.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            hint.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            hint.centerYAnchor.constraint(equalTo: openURLButton.centerYAnchor),
-            hint.trailingAnchor.constraint(lessThanOrEqualTo: openURLButton.leadingAnchor, constant: -10),
+            keyField.trailingAnchor.constraint(equalTo: openURLButton.leadingAnchor, constant: -8),
 
             openURLButton.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            openURLButton.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            openURLButton.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             openURLButton.heightAnchor.constraint(equalToConstant: 24),
+            openURLButton.widthAnchor.constraint(equalToConstant: 104),
         ])
 
         alert.accessoryView = container
@@ -599,7 +588,7 @@ final class HubcapViewController: NSViewController {
             resultCountLabel.stringValue = "No games"
         } else if loadedOffset < totalCount {
             setStatus(
-                "Showing (allGames.count) of (totalCount) games. Load 100 more to continue.",
+                "Showing \(allGames.count) of \(totalCount) games. Load 100 more to continue.",
                 tone: .ok
             )
             resultCountLabel.stringValue = "(games.count) shown"
