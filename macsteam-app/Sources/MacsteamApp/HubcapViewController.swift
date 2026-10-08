@@ -257,14 +257,7 @@ final class HubcapViewController: NSViewController {
             setBusy(true, status: "Loading Hubcap library…")
             Task {
                 do {
-                    var loaded = try await client.allGames(apiKey: key)
-                    if loaded.isEmpty {
-                        let page = try await client.libraryPage(
-                            apiKey: key,
-                            limit: 1000,
-                            offset: 0
-                        )
-                        loaded = page.games
+                    var loaded = try await fetchAllGames(apiKey: key)
                     }
                     let deduped = deduplicateAndSort(loaded)
                     allGames = deduped
@@ -322,6 +315,26 @@ final class HubcapViewController: NSViewController {
     func controlTextDidChange(_ obj: Notification) {
         guard !isBusy else { return }
         applyFilter()
+    }
+
+    private func fetchAllGames(apiKey: String) async throws -> [HubcapGame] {
+        do {
+            return try await client.allGames(apiKey: apiKey)
+        } catch HubcapClientError.unavailable {
+            let page = try await client.libraryPage(
+                apiKey: apiKey,
+                limit: 1000,
+                offset: 0
+            )
+            return page.games
+        } catch HubcapClientError.invalidResponse {
+            let page = try await client.libraryPage(
+                apiKey: apiKey,
+                limit: 1000,
+                offset: 0
+            )
+            return page.games
+        }
     }
 
     private func loadLibrary() {
