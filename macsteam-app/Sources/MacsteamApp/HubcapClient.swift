@@ -388,8 +388,13 @@ final class HubcapClient: @unchecked Sendable {
         }
 
         let preferredKeys = [
+            "use_count",
+            "useCount",
             "usage_count",
             "usageCount",
+            "daily_usage",
+            "dailyUsage",
+            "uses",
             "count"
         ]
 
