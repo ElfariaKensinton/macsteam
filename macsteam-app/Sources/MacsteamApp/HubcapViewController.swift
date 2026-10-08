@@ -17,6 +17,7 @@ final class HubcapViewController: NSViewController {
     private var refreshButton: NSButton!
     private var tableView: NSTableView!
     private var statusLabel: NSTextField!
+    private var copyStatusButton: NSButton!
     private var spinner: NSProgressIndicator!
     private var emptyLabel: NSTextField!
 
@@ -171,13 +172,19 @@ final class HubcapViewController: NSViewController {
         statusLabel.allowsEditingTextAttributes = false
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
+        copyStatusButton = makeButton(title: "Copy", target: self, action: #selector(copyStatus))
+        copyStatusButton.controlSize = .small
+        copyStatusButton.setAccessibilityLabel("Copy Hubcap status")
+
         spinner = NSProgressIndicator()
         spinner.style = .spinning
         spinner.controlSize = .small
         spinner.isDisplayedWhenStopped = false
         spinner.translatesAutoresizingMaskIntoConstraints = false
 
-        let statusRow = NSStackView(views: [spinner, statusLabel])
+        statusLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let statusRow = NSStackView(views: [spinner, statusLabel, copyStatusButton])
         statusRow.orientation = .horizontal
         statusRow.alignment = .centerY
         statusRow.spacing = 8
@@ -473,6 +480,12 @@ final class HubcapViewController: NSViewController {
         } else {
             setStatus("\(games.count) match “\(query)”.", tone: .neutral)
         }
+    }
+
+    @objc private func copyStatus() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(statusLabel.stringValue, forType: .string)
     }
 
     private func setBusy(_ busy: Bool, status: String? = nil) {
