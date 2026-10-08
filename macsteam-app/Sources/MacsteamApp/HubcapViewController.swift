@@ -7,8 +7,6 @@ final class HubcapViewController: NSViewController {
 
     // Keep all Hubcap API behavior in HubcapClient. This view only orchestrates UI state.
     private let client = HubcapClient()
-    private let libraryCache = HubcapLibraryCache()
-    private var cacheRefreshTask: Task<Void, Never>?
     private var apiStatusIcon: NSImageView!
     private var apiStatusTitle: NSTextField!
     private var apiStatusDetail: NSTextField!
@@ -31,8 +29,6 @@ final class HubcapViewController: NSViewController {
     private var loadedOffset = 0
     private var isBusy = false
     private var searchTask: Task<Void, Never>?
-    private var isUpdatingCache = false
-    private var didStartCacheRefresh = false
 
     init(store: ConfigStore, onConfigChanged: @escaping () -> Void) {
         self.store = store
@@ -49,10 +45,11 @@ final class HubcapViewController: NSViewController {
         // MARK: Header
 
         let heroIcon = NSImageView()
-        heroIcon.image = NSImage(systemSymbolName: "shippingbox.fill", accessibilityDescription: nil)
+        heroIcon.image = NSImage(systemSymbolName: "shippingbox.fill", accessibilityDescription: "Hubcap")
         heroIcon.symbolConfiguration = .init(pointSize: 26, weight: .semibold)
         heroIcon.contentTintColor = .controlAccentColor
         heroIcon.translatesAutoresizingMaskIntoConstraints = false
+        heroIcon.setAccessibilityElement(false)
 
         let title = NSTextField(labelWithString: "Find games in Hubcap")
         title.font = .systemFont(ofSize: 24, weight: .bold)
@@ -60,7 +57,7 @@ final class HubcapViewController: NSViewController {
         title.translatesAutoresizingMaskIntoConstraints = false
 
         let subtitle = NSTextField(labelWithString:
-            "Search the Hubcap library, then install a Lua manifest directly into macSteam."
+            "Browse 100 games at a time and install Lua manifests directly into macSteam."
         )
         subtitle.font = Typography.body
         subtitle.textColor = Colors.secondaryText
@@ -71,7 +68,7 @@ final class HubcapViewController: NSViewController {
         let heroText = NSStackView(views: [title, subtitle])
         heroText.orientation = .vertical
         heroText.alignment = .leading
-        heroText.spacing = 3
+        heroText.spacing = 4
         heroText.translatesAutoresizingMaskIntoConstraints = false
 
         let hero = NSStackView(views: [heroIcon, heroText])
@@ -81,25 +78,24 @@ final class HubcapViewController: NSViewController {
         hero.translatesAutoresizingMaskIntoConstraints = false
 
         installedCountLabel = makeMetricLabel("0 installed")
-        let catalogCount = makeMetricLabel("Hubcap catalog")
-        let stats = NSStackView(views: [installedCountLabel, catalogCount])
-        stats.orientation = .horizontal
-        stats.alignment = .centerY
-        stats.spacing = 8
-        stats.translatesAutoresizingMaskIntoConstraints = false
+        installedCountLabel.alignment = .right
 
-        let heroRow = NSStackView(views: [hero, stats])
+        let heroStats = NSStackView(views: [installedCountLabel])
+        heroStats.orientation = .vertical
+        heroStats.alignment = .trailing
+        heroStats.translatesAutoresizingMaskIntoConstraints = false
+
+        let heroRow = NSStackView(views: [hero, heroStats])
         heroRow.orientation = .horizontal
         heroRow.alignment = .top
-        heroRow.spacing = 12
+        heroRow.spacing = 16
         heroRow.translatesAutoresizingMaskIntoConstraints = false
         hero.setContentHuggingPriority(.defaultLow, for: .horizontal)
         hero.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
+        // MARK: Connection
 
-        // MARK: Hubcap connection
-
-        let apiHeader = settingsGroupLabel("Connect to Hubcap")
+        let apiHeader = settingsGroupLabel("Connection")
 
         apiStatusIcon = NSImageView()
         apiStatusIcon.translatesAutoresizingMaskIntoConstraints = false
@@ -110,16 +106,17 @@ final class HubcapViewController: NSViewController {
         apiStatusTitle.textColor = .labelColor
         apiStatusTitle.translatesAutoresizingMaskIntoConstraints = false
 
-        apiStatusDetail = NSTextField(labelWithString: "Add an access key in Settings.")
+        apiStatusDetail = NSTextField(labelWithString: "Add an access key to use Hubcap.")
         apiStatusDetail.font = Typography.caption
         apiStatusDetail.textColor = Colors.secondaryText
+        apiStatusDetail.lineBreakMode = .byTruncatingTail
         apiStatusDetail.translatesAutoresizingMaskIntoConstraints = false
         apiStatusDetail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let apiText = NSStackView(views: [apiStatusTitle, apiStatusDetail])
         apiText.orientation = .vertical
         apiText.alignment = .leading
-        apiText.spacing = 2
+        apiText.spacing = 3
         apiText.translatesAutoresizingMaskIntoConstraints = false
         apiText.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
@@ -128,6 +125,9 @@ final class HubcapViewController: NSViewController {
             target: self,
             action: #selector(openHubcapSettings)
         )
+        styleSecondaryButton(apiSettingsButton)
+        apiSettingsButton.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
+        apiSettingsButton.imagePosition = .imageLeading
 
         let apiCard = makeCard()
         apiCard.addSubview(apiStatusIcon)
@@ -135,28 +135,30 @@ final class HubcapViewController: NSViewController {
         apiCard.addSubview(apiSettingsButton)
 
         NSLayoutConstraint.activate([
-            apiStatusIcon.leadingAnchor.constraint(equalTo: apiCard.leadingAnchor, constant: 14),
+            apiStatusIcon.leadingAnchor.constraint(equalTo: apiCard.leadingAnchor, constant: 16),
             apiStatusIcon.centerYAnchor.constraint(equalTo: apiCard.centerYAnchor),
             apiStatusIcon.widthAnchor.constraint(equalToConstant: 12),
             apiStatusIcon.heightAnchor.constraint(equalToConstant: 12),
 
             apiText.leadingAnchor.constraint(equalTo: apiStatusIcon.trailingAnchor, constant: 10),
-            apiText.topAnchor.constraint(equalTo: apiCard.topAnchor, constant: 11),
-            apiText.bottomAnchor.constraint(equalTo: apiCard.bottomAnchor, constant: -11),
-            apiText.trailingAnchor.constraint(lessThanOrEqualTo: apiSettingsButton.leadingAnchor, constant: -12),
+            apiText.topAnchor.constraint(equalTo: apiCard.topAnchor, constant: 12),
+            apiText.bottomAnchor.constraint(equalTo: apiCard.bottomAnchor, constant: -12),
+            apiText.trailingAnchor.constraint(lessThanOrEqualTo: apiSettingsButton.leadingAnchor, constant: -16),
 
-            apiSettingsButton.trailingAnchor.constraint(equalTo: apiCard.trailingAnchor, constant: -14),
+            apiSettingsButton.trailingAnchor.constraint(equalTo: apiCard.trailingAnchor, constant: -16),
             apiSettingsButton.centerYAnchor.constraint(equalTo: apiCard.centerYAnchor),
+            apiSettingsButton.widthAnchor.constraint(equalToConstant: 104),
+            apiSettingsButton.heightAnchor.constraint(equalToConstant: 30),
         ])
 
-        // MARK: Search
+        // MARK: Library controls
 
-        let searchHeader = settingsGroupLabel("Library")
+        let libraryHeader = settingsGroupLabel("Library")
 
         searchField = NSSearchField()
-        searchField.placeholderString = "Search game title or App ID"
+        searchField.placeholderString = "Search loaded games by title or App ID"
         searchField.translatesAutoresizingMaskIntoConstraints = false
-        searchField.setAccessibilityLabel("Search Hubcap games")
+        searchField.setAccessibilityLabel("Search loaded Hubcap games")
         searchField.delegate = self
         searchField.target = self
         searchField.action = #selector(searchFieldSubmitted)
@@ -170,9 +172,10 @@ final class HubcapViewController: NSViewController {
         )
         refreshButton.bezelStyle = .rounded
         refreshButton.controlSize = .large
-        refreshButton.toolTip = "Refresh the Hubcap library"
-        refreshButton.setAccessibilityLabel("Refresh Hubcap library")
+        refreshButton.toolTip = "Reload the first 100 games"
+        refreshButton.setAccessibilityLabel("Reload first 100 Hubcap games")
         refreshButton.translatesAutoresizingMaskIntoConstraints = false
+        styleIconButton(refreshButton)
 
         let searchBar = NSStackView(views: [searchField, refreshButton])
         searchBar.orientation = .horizontal
@@ -182,24 +185,18 @@ final class HubcapViewController: NSViewController {
         searchField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         searchField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        resultCountLabel = NSTextField(labelWithString: "Ready to search")
-        resultCountLabel.font = Typography.caption
+        resultCountLabel = NSTextField(labelWithString: "Ready to load")
+        resultCountLabel.font = .systemFont(ofSize: 12, weight: .medium)
         resultCountLabel.textColor = Colors.secondaryText
         resultCountLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        let sortLabel = NSTextField(labelWithString: "A–Z")
-        sortLabel.font = Typography.caption
-        sortLabel.textColor = Colors.quiet
-        sortLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        let resultsHeader = NSStackView(views: [resultCountLabel, sortLabel])
-        resultsHeader.orientation = .horizontal
-        resultsHeader.alignment = .centerY
-        resultsHeader.spacing = 8
-        resultsHeader.translatesAutoresizingMaskIntoConstraints = false
         resultCountLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        // MARK: Results list
+        let resultsHeader = NSStackView(views: [resultCountLabel])
+        resultsHeader.orientation = .horizontal
+        resultsHeader.alignment = .centerY
+        resultsHeader.translatesAutoresizingMaskIntoConstraints = false
+
+        // MARK: Results
 
         tableView = NSTableView()
         tableView.headerView = nil
@@ -219,9 +216,9 @@ final class HubcapViewController: NSViewController {
         scroll.documentView = tableView
 
         emptyState = EmptyStateView(
-            symbol: "magnifyingglass",
-            prompt: "No games to show",
-            hint: "Search for a title or switch back to All."
+            symbol: "books.vertical",
+            prompt: "Browse the Hubcap library",
+            hint: "Load a page to start browsing."
         )
         emptyState.isHidden = true
 
@@ -241,10 +238,7 @@ final class HubcapViewController: NSViewController {
             emptyState.trailingAnchor.constraint(lessThanOrEqualTo: listCard.trailingAnchor, constant: -20),
         ])
 
-        // MARK: Footer
-
-        loadMoreButton = makeButton(title: "Load More", target: self, action: #selector(loadMoreLibrary))
-        loadMoreButton.controlSize = .small
+        // MARK: Footer actions
 
         spinner = NSProgressIndicator()
         spinner.style = .spinning
@@ -259,32 +253,50 @@ final class HubcapViewController: NSViewController {
         statusLabel.allowsEditingTextAttributes = false
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-
-        copyStatusButton = makeButton(title: "Copy", target: self, action: #selector(copyStatus))
-        copyStatusButton.controlSize = .small
-
-        let footerLeft = NSStackView(views: [spinner, statusLabel, copyStatusButton])
-        footerLeft.orientation = .horizontal
-        footerLeft.alignment = .centerY
-        footerLeft.spacing = 7
-        footerLeft.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let footer = NSStackView(views: [footerLeft, loadMoreButton])
+        copyStatusButton = NSButton(
+            image: NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: "Copy status")!,
+            target: self,
+            action: #selector(copyStatus)
+        )
+        copyStatusButton.bezelStyle = .rounded
+        copyStatusButton.controlSize = .small
+        copyStatusButton.toolTip = "Copy status"
+        copyStatusButton.setAccessibilityLabel("Copy status")
+        copyStatusButton.translatesAutoresizingMaskIntoConstraints = false
+        styleIconButton(copyStatusButton)
+
+        loadMoreButton = makeButton(
+            title: "Load 100 More",
+            target: self,
+            action: #selector(loadMoreLibrary)
+        )
+        loadMoreButton.controlSize = .regular
+        stylePrimaryButton(loadMoreButton)
+
+        let footerStatus = NSStackView(views: [spinner, statusLabel, copyStatusButton])
+        footerStatus.orientation = .horizontal
+        footerStatus.alignment = .centerY
+        footerStatus.spacing = 8
+        footerStatus.translatesAutoresizingMaskIntoConstraints = false
+        footerStatus.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let footer = NSStackView(views: [footerStatus, loadMoreButton])
         footer.orientation = .horizontal
         footer.alignment = .centerY
         footer.spacing = 12
         footer.translatesAutoresizingMaskIntoConstraints = false
-        footerLeft.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        footerStatus.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         // MARK: Root
 
         let stack = NSStackView(views: [
             heroRow,
             apiHeader, apiCard,
-            searchHeader, searchBar,
+            libraryHeader, searchBar,
             resultsHeader, listCard,
-            footer,
+            footer
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -292,9 +304,9 @@ final class HubcapViewController: NSViewController {
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.setCustomSpacing(12, after: heroRow)
         stack.setCustomSpacing(5, after: apiHeader)
-        stack.setCustomSpacing(16, after: apiCard)
-        stack.setCustomSpacing(5, after: searchHeader)
-        stack.setCustomSpacing(9, after: searchBar)
+        stack.setCustomSpacing(14, after: apiCard)
+        stack.setCustomSpacing(5, after: libraryHeader)
+        stack.setCustomSpacing(8, after: searchBar)
         stack.setCustomSpacing(7, after: resultsHeader)
         stack.setCustomSpacing(8, after: listCard)
 
@@ -317,6 +329,10 @@ final class HubcapViewController: NSViewController {
 
             refreshButton.widthAnchor.constraint(equalToConstant: 34),
             refreshButton.heightAnchor.constraint(equalToConstant: 34),
+            copyStatusButton.widthAnchor.constraint(equalToConstant: 30),
+            copyStatusButton.heightAnchor.constraint(equalToConstant: 26),
+            loadMoreButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 124),
+            loadMoreButton.heightAnchor.constraint(equalToConstant: 30),
         ])
 
         updateInstalledMetric()
@@ -331,18 +347,12 @@ final class HubcapViewController: NSViewController {
         updateInstalledMetric()
         updateAPIStatus()
 
-        loadCachedLibraryThenStart()
-    }
-
-    override func viewWillDisappear() {
-        super.viewWillDisappear()
-        // The full database refresh is intentionally allowed to continue while the Hubcap
-        // controller remains owned by MainViewController. It is cancelled only if the
-        // controller itself is released.
+        if !isBusy {
+            loadLibrary(reset: true)
+        }
     }
 
     deinit {
-        cacheRefreshTask?.cancel()
         searchTask?.cancel()
     }
 
@@ -412,7 +422,6 @@ final class HubcapViewController: NSViewController {
             do {
                 let key = try validateHubcapKey(keyField.stringValue)
                 HubcapCredentialStore.save(key)
-                didStartCacheRefresh = false
                 updateAPIStatus()
                 allGames.removeAll()
                 games.removeAll()
@@ -467,12 +476,7 @@ final class HubcapViewController: NSViewController {
     @objc private func refreshLibrary() {
         guard !isBusy else { return }
         searchTask?.cancel()
-
-        if HubcapCredentialStore.apiKey != nil {
-            startBackgroundDatabaseRefresh(force: true)
-        } else {
-            loadLibrary(reset: true)
-        }
+        loadLibrary(reset: true)
     }
 
     @objc private func loadMoreLibrary() {
@@ -548,141 +552,6 @@ final class HubcapViewController: NSViewController {
         tableView.reloadData()
     }
 
-    private func loadCachedLibraryThenStart() {
-        Task { [weak self] in
-            guard let self else { return }
-
-            let snapshot = await libraryCache.load()
-
-            if let snapshot {
-                games = deduplicateAndSort(snapshot.games)
-                allGames = games
-                totalCount = snapshot.totalCount
-                loadedOffset = games.count
-                tableView.reloadData()
-                resultCountLabel.stringValue = "\(games.count) cached games"
-                emptyState.configure(
-                    symbol: "books.vertical",
-                    prompt: "Hubcap library",
-                    hint: "Search the local database while Hubcap updates in the background."
-                )
-                updateEmptyState()
-                setStatus(
-                    "Loaded \(games.count) games from the local database. Updating in background…",
-                    tone: .ok
-                )
-                scheduleSearch()
-            }
-
-            if snapshot == nil && allGames.isEmpty {
-                loadLibrary(reset: true)
-            }
-
-            startBackgroundDatabaseRefresh()
-        }
-    }
-
-    func startBackgroundDatabaseRefresh(force: Bool = false) {
-        guard HubcapCredentialStore.apiKey != nil else { return }
-        if !force && didStartCacheRefresh { return }
-        didStartCacheRefresh = true
-        refreshLibraryDatabaseInBackground()
-    }
-
-    private func refreshLibraryDatabaseInBackground() {
-        guard !isUpdatingCache, let key = HubcapCredentialStore.apiKey else { return }
-
-        isUpdatingCache = true
-
-        cacheRefreshTask?.cancel()
-        cacheRefreshTask = Task.detached(priority: .utility) { [client, libraryCache] in
-            do {
-                var offset = 0
-                var totalCount = 0
-                var collected: [HubcapGame] = []
-                var lastStatusUpdate = Date.distantPast
-
-                while !Task.isCancelled {
-                    let page = try await client.libraryPage(
-                        apiKey: key,
-                        limit: 1000,
-                        offset: offset
-                    )
-
-                    if offset == 0 {
-                        totalCount = page.totalCount
-                    }
-
-                    collected.append(contentsOf: page.games)
-                    offset += page.games.count
-
-                    if page.games.isEmpty || offset >= page.totalCount {
-                        break
-                    }
-
-                    if Date().timeIntervalSince(lastStatusUpdate) >= 2 {
-                        lastStatusUpdate = Date()
-                        let progress = page.totalCount == 0
-                            ? 0
-                            : Int((Double(offset) / Double(page.totalCount)) * 100)
-
-                        await MainActor.run { [weak self] in
-                            guard let self, !self.isBusy else { return }
-                            self.setStatus(
-                                "Updating Hubcap database… \(progress)%",
-                                tone: .neutral
-                            )
-                        }
-                    }
-                }
-
-                let snapshot = HubcapLibrarySnapshot(
-                    updatedAt: Date(),
-                    totalCount: totalCount,
-                    games: collected
-                )
-                try await libraryCache.save(snapshot)
-
-                await MainActor.run { [weak self] in
-                    guard let self else { return }
-                    self.isUpdatingCache = false
-                    guard self.isViewLoaded else { return }
-                    self.allGames = self.deduplicateAndSort(collected)
-                    self.totalCount = totalCount
-                    self.loadedOffset = collected.count
-                    self.games = self.allGames
-                    self.tableView.reloadData()
-                    self.resultCountLabel.stringValue = "\(self.allGames.count) games"
-                    self.emptyState.configure(
-                        symbol: "books.vertical",
-                        prompt: "Hubcap library",
-                        hint: "Search the local database."
-                    )
-                    self.updateEmptyState()
-                    self.setStatus(
-                        "Hubcap database updated — \(self.allGames.count) games available offline.",
-                        tone: .ok
-                    )
-                    self.scheduleSearch()
-                }
-            } catch is CancellationError {
-                await MainActor.run { [weak self] in
-                    self?.isUpdatingCache = false
-                }
-            } catch {
-                await MainActor.run { [weak self] in
-                    guard let self else { return }
-                    self.isUpdatingCache = false
-                    guard self.isViewLoaded, !self.isBusy else { return }
-                    self.setStatus(
-                        "Using the saved Hubcap database. Background update failed: \(error.localizedDescription)",
-                        tone: .warn
-                    )
-                }
-            }
-        }
-    }
-
     private func applyLibraryRows() {
         games = deduplicateAndSort(allGames)
         tableView.reloadData()
@@ -703,11 +572,11 @@ final class HubcapViewController: NSViewController {
         guard !isBusy, let key = currentKey() else { return }
 
         let offset = reset ? 0 : loadedOffset
-        setBusy(true, status: reset ? "Loading Hubcap library…" : "Loading more games…")
+        setBusy(true, status: reset ? "Loading first 100 games…" : "Loading 100 more games…")
 
         Task {
             do {
-                // API endpoint, pagination size, and request semantics are unchanged.
+                // Keep foreground pagination at 100 items so the first screen stays responsive.
                 let page = try await client.libraryPage(
                     apiKey: key,
                     limit: 100,
@@ -736,13 +605,13 @@ final class HubcapViewController: NSViewController {
             resultCountLabel.stringValue = "No games"
         } else if loadedOffset < totalCount {
             setStatus(
-                "Showing (allGames.count) of (totalCount). Search Hubcap or browse the loaded library.",
+                "Showing (allGames.count) of (totalCount) games. Load 100 more to continue.",
                 tone: .ok
             )
-            resultCountLabel.stringValue = "\(games.count) shown"
+            resultCountLabel.stringValue = "(games.count) shown"
         } else {
-            setStatus("Loaded all (allGames.count) Hubcap games.", tone: .ok)
-            resultCountLabel.stringValue = "\(games.count) shown"
+            setStatus("Showing all (allGames.count) Hubcap games.", tone: .ok)
+            resultCountLabel.stringValue = "(games.count) shown"
         }
 
         loadMoreButton.isEnabled =
@@ -879,6 +748,26 @@ final class HubcapViewController: NSViewController {
         return card
     }
 
+    private func stylePrimaryButton(_ button: NSButton) {
+        button.bezelStyle = .rounded
+        button.font = .systemFont(ofSize: 13, weight: .semibold)
+        button.contentTintColor = .controlAccentColor
+        button.alignment = .center
+    }
+
+    private func styleSecondaryButton(_ button: NSButton) {
+        button.bezelStyle = .rounded
+        button.font = .systemFont(ofSize: 13, weight: .medium)
+        button.contentTintColor = .labelColor
+        button.alignment = .center
+    }
+
+    private func styleIconButton(_ button: NSButton) {
+        button.bezelStyle = .rounded
+        button.contentTintColor = .secondaryLabelColor
+        button.imageScaling = .scaleProportionallyDown
+    }
+
     @objc private func copyStatus() {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -896,7 +785,7 @@ final class HubcapViewController: NSViewController {
         }
 
         apiSettingsButton.isEnabled = !busy
-        searchField.isEnabled = true
+        searchField.isEnabled = !busy
         refreshButton.isEnabled = !busy
         tableView.isEnabled = !busy
 
