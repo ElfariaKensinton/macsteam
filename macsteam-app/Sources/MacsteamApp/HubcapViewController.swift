@@ -15,6 +15,7 @@ final class HubcapViewController: NSViewController {
 
     private var searchField: NSSearchField!
     private var refreshButton: NSButton!
+    private var loadMoreButton: NSButton!
     private var tableView: NSTableView!
     private var statusLabel: NSTextField!
     private var copyStatusButton: NSButton!
@@ -24,7 +25,9 @@ final class HubcapViewController: NSViewController {
     private var allGames: [HubcapGame] = []
     private var games: [HubcapGame] = []
     private var totalCount = 0
+    private var loadedOffset = 0
     private var isBusy = false
+    private var searchTask: Task<Void, Never>?
 
     init(store: ConfigStore, onConfigChanged: @escaping () -> Void) {
         self.store = store
@@ -116,8 +119,9 @@ final class HubcapViewController: NSViewController {
         searchField.action = #selector(searchFieldSubmitted)
 
         refreshButton = makeButton(title: "Refresh", target: self, action: #selector(refreshLibrary))
+        loadMoreButton = makeButton(title: "Load More", target: self, action: #selector(loadMoreLibrary))
 
-        let searchRow = NSStackView(views: [searchField, refreshButton])
+        let searchRow = NSStackView(views: [searchField, refreshButton, loadMoreButton])
         searchRow.orientation = .horizontal
         searchRow.alignment = .centerY
         searchRow.spacing = 8
@@ -266,31 +270,12 @@ final class HubcapViewController: NSViewController {
         allGames.removeAll()
         games.removeAll()
         totalCount = 0
+        loadedOffset = 0
         tableView.reloadData()
         emptyLabel.isHidden = true
 
-        setBusy(true, status: "Loading Hubcap game catalog…")
-        Task {
-            do {
-                let loaded = try await fetchAllGames(apiKey: key)
-                allGames = deduplicateAndSort(loaded)
-                totalCount = allGames.count
-                applyFilter()
-                setBusy(false)
+        loadLibrary(reset: true)
 
-                if allGames.isEmpty {
-                    setStatus("Hubcap returned no games.", tone: .bad)
-                } else {
-                    setStatus(
-                        "Loaded \(allGames.count) games. Search is local; typing does not call Hubcap.",
-                        tone: .ok
-                    )
-                }
-            } catch {
-                setBusy(false)
-                setStatus(error.localizedDescription, tone: .bad)
-            }
-        }
     }
 
     @objc private func forgetKey() {
@@ -303,7 +288,9 @@ final class HubcapViewController: NSViewController {
             games.removeAll()
             totalCount = 0
             tableView.reloadData()
+            loadedOffset = 0
             emptyLabel.isHidden = false
+            loadMoreButton.isEnabled = false
             setStatus("Hubcap API key removed.", tone: .neutral)
         } catch {
             setStatus(error.localizedDescription, tone: .bad)
@@ -311,67 +298,147 @@ final class HubcapViewController: NSViewController {
     }
 
     @objc private func searchFieldSubmitted() {
-        applyFilter()
+        scheduleSearch()
     }
 
     @objc private func refreshLibrary() {
         guard !isBusy else { return }
-        loadLibrary()
+        searchTask?.cancel()
+        loadLibrary(reset: true)
+    }
+
+    @objc private func loadMoreLibrary() {
+        guard !isBusy, searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+        loadLibrary(reset: false)
     }
 
     func controlTextDidChange(_ obj: Notification) {
-        guard !isBusy else { return }
-        applyFilter()
+        scheduleSearch()
     }
 
-    private func fetchAllGames(apiKey: String) async throws -> [HubcapGame] {
-        do {
-            return try await client.allGames(apiKey: apiKey)
-        } catch HubcapClientError.unavailable {
-            let page = try await client.libraryPage(
-                apiKey: apiKey,
-                limit: 1000,
-                offset: 0
-            )
-            return page.games
-        } catch HubcapClientError.invalidResponse {
-            let page = try await client.libraryPage(
-                apiKey: apiKey,
-                limit: 1000,
-                offset: 0
-            )
-            return page.games
+    private func scheduleSearch() {
+        searchTask?.cancel()
+
+        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            games = allGames
+            tableView.reloadData()
+            emptyLabel.stringValue = "No games returned by Hubcap."
+            emptyLabel.isHidden = !games.isEmpty
+            updateCatalogStatus()
+            return
+        }
+
+        guard query.count >= 3 else {
+            games.removeAll()
+            tableView.reloadData()
+            emptyLabel.stringValue = "Enter at least 3 characters to search Hubcap."
+            emptyLabel.isHidden = false
+            setStatus("Enter at least 3 characters to search Hubcap.", tone: .neutral)
+            return
+        }
+
+        let isAppID = query.allSatisfy(\{ $0.isNumber \})
+        guard let key = currentKey() else { return }
+
+        searchTask = Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                try await Task.sleep(nanoseconds: 250_000_000)
+                if Task.isCancelled { return }
+
+                await MainActor.run {
+                    self.setBusy(true, status: "Searching Hubcap…")
+                }
+
+                let results = try await self.client.searchGames(
+                    query: query,
+                    apiKey: key,
+                    appID: isAppID
+                )
+                if Task.isCancelled { return }
+
+                await MainActor.run {
+                    self.games = self.deduplicateAndSort(results)
+                    self.tableView.reloadData()
+                    self.emptyLabel.stringValue = isAppID
+                        ? "No game matches App ID \(query)."
+                        : "No games match “\(query)”."
+                    self.emptyLabel.isHidden = !self.games.isEmpty
+                    self.setBusy(false)
+                    self.setStatus(
+                        "\(self.games.count) result(s) from Hubcap.",
+                        tone: self.games.isEmpty ? .neutral : .ok
+                    )
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                await MainActor.run {
+                    self.setBusy(false)
+                    self.setStatus(error.localizedDescription, tone: .bad)
+                }
+            }
         }
     }
 
-    private func loadLibrary() {
+    private func loadLibrary(reset: Bool) {
         guard !isBusy, let key = currentKey() else { return }
 
-        setBusy(true, status: "Loading Hubcap game catalog…")
+        let offset = reset ? 0 : loadedOffset
+        setBusy(true, status: reset ? "Loading Hubcap catalog…" : "Loading more Hubcap games…")
 
         Task {
             do {
-                let loaded = try await fetchAllGames(apiKey: key)
-                allGames = deduplicateAndSort(loaded)
-                totalCount = allGames.count
-                applyFilter()
-                setBusy(false)
+                let page = try await client.libraryPage(
+                    apiKey: key,
+                    limit: 1000,
+                    offset: offset
+                )
 
-                guard !allGames.isEmpty else {
-                    setStatus("Hubcap returned no games.", tone: .bad)
-                    return
+                let merged: [HubcapGame]
+                if reset {
+                    merged = page.games
+                } else {
+                    merged = allGames + page.games
                 }
 
-                setStatus(
-                    "Loaded \(allGames.count) games. Search is local; typing does not call Hubcap.",
-                    tone: .ok
-                )
+                allGames = deduplicateAndSort(merged)
+                loadedOffset = offset + page.games.count
+                totalCount = page.totalCount
+                games = allGames
+                tableView.reloadData()
+                emptyLabel.stringValue = "No games returned by Hubcap."
+                emptyLabel.isHidden = !games.isEmpty
+                setBusy(false)
+                updateCatalogStatus()
             } catch {
                 setBusy(false)
                 setStatus(error.localizedDescription, tone: .bad)
             }
         }
     }
+
+    private func updateCatalogStatus() {
+        if allGames.isEmpty {
+            setStatus("Hubcap returned no games.", tone: .bad)
+        } else if loadedOffset < totalCount {
+            setStatus(
+                "Showing \(allGames.count) of \(totalCount) games. Search uses Hubcap; Load More fetches the next page.",
+                tone: .ok
+            )
+        } else {
+            setStatus("Loaded all \(allGames.count) Hubcap games.", tone: .ok)
+        }
+        loadMoreButton.isEnabled =
+            !isBusy &&
+            searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            loadedOffset < totalCount
+    }
+
 
     private func deduplicateAndSort(_ input: [HubcapGame]) -> [HubcapGame] {
         var seen = Set<String>()
@@ -451,43 +518,6 @@ final class HubcapViewController: NSViewController {
         return key
     }
 
-    private func applyFilter() {
-        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if query.isEmpty {
-            games = allGames
-            emptyLabel.stringValue = "No games returned by Hubcap."
-        } else if query.allSatisfy({ $0.isNumber }) {
-            games = allGames.filter { $0.id == query }
-            emptyLabel.stringValue = "No game matches App ID \(query)."
-        } else {
-            games = allGames.filter {
-                $0.name.range(
-                    of: query,
-                    options: [.caseInsensitive, .diacriticInsensitive]
-                ) != nil
-            }
-            emptyLabel.stringValue = "No games match “\(query)”."
-        }
-
-        tableView.reloadData()
-        emptyLabel.isHidden = !games.isEmpty
-
-        guard !isBusy else { return }
-
-        if query.isEmpty {
-            setStatus("\(allGames.count) games available in Hubcap.", tone: .ok)
-        } else {
-            setStatus("\(games.count) match “\(query)”.", tone: .neutral)
-        }
-    }
-
-    @objc private func copyStatus() {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(statusLabel.stringValue, forType: .string)
-    }
-
     private func setBusy(_ busy: Bool, status: String? = nil) {
         isBusy = busy
         spinner.isHidden = !busy
@@ -501,9 +531,10 @@ final class HubcapViewController: NSViewController {
         apiKeysButton.isEnabled = !busy
         saveKeyButton.isEnabled = !busy
         forgetKeyButton.isEnabled = !busy
-        searchField.isEnabled = !busy
+        searchField.isEnabled = true
         refreshButton.isEnabled = !busy
         tableView.isEnabled = !busy
+        loadMoreButton.isEnabled = !busy && searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && loadedOffset < totalCount
 
         if let status {
             setStatus(status, tone: .neutral)
