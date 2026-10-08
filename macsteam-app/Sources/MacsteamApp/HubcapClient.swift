@@ -12,12 +12,6 @@ struct HubcapLibraryPage: Sendable {
     let games: [HubcapGame]
 }
 
-struct HubcapUserStats: Sendable {
-    let dailyUsage: Int?
-    let dailyLimit: Int?
-    let canMakeRequests: Bool
-}
-
 enum HubcapClientError: LocalizedError {
     case invalidAPIKey
     case invalidSearch
@@ -76,29 +70,6 @@ final class HubcapClient: @unchecked Sendable {
         let (data, response) = try await session.data(for: request)
         try validate(response)
         return try decodeLibraryPage(data)
-    }
-
-    func userStats(apiKey: String) async throws -> HubcapUserStats {
-        let request = try makeRequest(
-            url: baseURL.appendingPathComponent("/api/v1/user/stats"),
-            apiKey: apiKey,
-            accept: "application/json"
-        )
-        let (data, response) = try await session.data(for: request)
-        try validate(response)
-
-        guard
-            let raw = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let canMakeRequests = boolValue(raw["can_make_requests"])
-        else {
-            throw HubcapClientError.invalidResponse
-        }
-
-        return HubcapUserStats(
-            dailyUsage: intValue(raw["daily_usage"]),
-            dailyLimit: intValue(raw["daily_limit"]),
-            canMakeRequests: canMakeRequests
-        )
     }
 
     func downloadLua(appID: Int, apiKey: String) async throws -> URL {
