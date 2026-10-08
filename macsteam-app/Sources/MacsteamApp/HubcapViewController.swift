@@ -130,8 +130,8 @@ final class HubcapViewController: NSViewController {
 
         tableView = NSTableView()
         tableView.headerView = nil
-        tableView.rowHeight = 48
-        tableView.intercellSpacing = NSSize(width: 0, height: 1)
+        tableView.rowHeight = 70
+        tableView.intercellSpacing = NSSize(width: 0, height: 0)
         tableView.selectionHighlightStyle = .regular
         tableView.dataSource = self
         tableView.delegate = self
@@ -587,30 +587,56 @@ extension HubcapViewController: NSTableViewDataSource, NSTableViewDelegate {
         _ tableView: NSTableView,
         heightOfRow row: Int
     ) -> CGFloat {
-        48
+        70
     }
 }
 
 @MainActor
 private final class HubcapGameCell: NSTableCellView {
+    private static let imageCache = NSCache<NSURL, NSImage>()
+
+    private let iconView = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
-    private let idLabel = NSTextField(labelWithString: "")
+    private let metaLabel = NSTextField(labelWithString: "")
+    private let statusLabel = NSTextField(labelWithString: "")
     private let installButton = NSButton(title: "Install", target: nil, action: nil)
+
+    private var imageTask: Task<Void, Never>?
+    private var representedID = ""
 
     var onInstall: (() -> Void)?
 
     init(identifier: NSUserInterfaceItemIdentifier) {
         super.init(frame: .zero)
         self.identifier = identifier
+        wantsLayer = true
+
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        iconView.imageAlignment = .alignCenter
+        iconView.image = NSImage(systemSymbolName: "gamecontroller", accessibilityDescription: nil)
+        iconView.symbolConfiguration = .init(pointSize: 22, weight: .regular)
+        iconView.contentTintColor = Colors.quiet
+        iconView.wantsLayer = true
+        iconView.layer?.cornerRadius = 6
+        iconView.layer?.masksToBounds = true
+        iconView.translatesAutoresizingMaskIntoConstraints = false
 
         nameLabel.font = Typography.body
         nameLabel.textColor = .labelColor
         nameLabel.lineBreakMode = .byTruncatingTail
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
+        nameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        idLabel.font = Typography.caption
-        idLabel.textColor = Colors.secondaryText
-        idLabel.translatesAutoresizingMaskIntoConstraints = false
+        metaLabel.font = Typography.caption
+        metaLabel.textColor = Colors.secondaryText
+        metaLabel.lineBreakMode = .byTruncatingTail
+        metaLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        statusLabel.font = Typography.caption
+        statusLabel.alignment = .center
+        statusLabel.translatesAutoresizingMaskIntoConstraints = false
+        statusLabel.wantsLayer = true
+        statusLabel.layer?.cornerRadius = 6
 
         installButton.bezelStyle = .rounded
         installButton.controlSize = .small
@@ -619,29 +645,82 @@ private final class HubcapGameCell: NSTableCellView {
         installButton.translatesAutoresizingMaskIntoConstraints = false
         installButton.setAccessibilityLabel("Install game")
 
+        addSubview(iconView)
         addSubview(nameLabel)
-        addSubview(idLabel)
+        addSubview(metaLabel)
+        addSubview(statusLabel)
         addSubview(installButton)
 
         NSLayoutConstraint.activate([
-            nameLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            nameLabel.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -7),
-            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: installButton.leadingAnchor, constant: -12),
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 70),
+            iconView.heightAnchor.constraint(equalToConstant: 52),
 
-            idLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
-            idLabel.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 9),
+            nameLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 12),
+            nameLabel.topAnchor.constraint(equalTo: topAnchor, constant: 12),
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: statusLabel.leadingAnchor, constant: -10),
+
+            metaLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
+            metaLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 3),
+            metaLabel.trailingAnchor.constraint(lessThanOrEqualTo: installButton.leadingAnchor, constant: -10),
+
+            statusLabel.trailingAnchor.constraint(equalTo: installButton.leadingAnchor, constant: -10),
+            statusLabel.centerYAnchor.constraint(equalTo: nameLabel.centerYAnchor),
 
             installButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             installButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            installButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 72),
         ])
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
+    deinit {
+        imageTask?.cancel()
+    }
+
     func configure(game: HubcapGame) {
+        imageTask?.cancel()
+        representedID = game.id
+
         nameLabel.stringValue = game.name
-        idLabel.stringValue = "App ID \(game.id)"
-        installButton.isEnabled = game.appID != nil
+        let type = game.appType?.capitalized ?? "App"
+        metaLabel.stringValue = "App ID \(game.id)  •  \(type)"
+
+        installButton.isEnabled = game.appID != nil && game.manifestAvailable
+
+        if game.manifestAvailable {
+            statusLabel.stringValue = "Available"
+            statusLabel.textColor = .systemGreen
+        } else {
+            statusLabel.stringValue = "Unavailable"
+            statusLabel.textColor = Colors.secondaryText
+        }
+
+        iconView.image = NSImage(systemSymbolName: "gamecontroller", accessibilityDescription: nil)
+        iconView.symbolConfiguration = .init(pointSize: 22, weight: .regular)
+        iconView.contentTintColor = Colors.quiet
+
+        guard let url = game.headerImageURL else { return }
+
+        if let cached = Self.imageCache.object(forKey: url as NSURL) {
+            iconView.image = cached
+            return
+        }
+
+        imageTask = Task { [weak self] in
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                guard let image = NSImage(data: data), !Task.isCancelled else { return }
+                Self.imageCache.setObject(image, forKey: url as NSURL)
+
+                guard let self, self.representedID == game.id else { return }
+                self.iconView.image = image
+            } catch {
+                // The text metadata remains useful if the Steam image is unavailable.
+            }
+        }
     }
 
     @objc private func installPressed() {
