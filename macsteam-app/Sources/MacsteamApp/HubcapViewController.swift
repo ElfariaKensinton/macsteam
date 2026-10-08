@@ -359,19 +359,14 @@ final class HubcapViewController: NSViewController {
     // MARK: Hubcap settings
 
     @objc private func openHubcapSettings() {
-        let controller = HubcapSettingsWindowController(
+        let dialog = HubcapSettingsDialogController(
             apiKey: HubcapCredentialStore.apiKey,
             openAPIKeys: { [weak self] in
                 self?.openAPIKeys()
             }
         )
 
-        controller.showWindow(nil)
-        guard let window = controller.window else { return }
-        window.makeKeyAndOrderFront(nil)
-        NSApp.runModal(for: window)
-
-        switch controller.result {
+        switch dialog.run() {
         case .connect(let key):
             connectHubcap(rawKey: key)
 
@@ -1051,54 +1046,49 @@ private extension EmptyStateView {
 }
 
 @MainActor
-private final class HubcapSettingsWindowController: NSWindowController, NSWindowDelegate {
+private final class HubcapSettingsDialogController: NSObject {
     enum Result {
         case connect(String)
         case disconnect
         case cancel
     }
 
-    private(set) var result: Result = .cancel
-    private let keyField: NSSecureTextField
-    private var actionTargets: [BlockTarget] = []
+    private let openAPIKeys: () -> Void
+    private let keyField = NSSecureTextField()
+    private let alert = NSAlert()
 
     init(apiKey: String?, openAPIKeys: @escaping () -> Void) {
-        keyField = NSSecureTextField()
+        self.openAPIKeys = openAPIKeys
+        super.init()
+
+        alert.alertStyle = .informational
+        alert.messageText = "Connect to Hubcap"
+        alert.informativeText = "Enter your Hubcap API key to browse and install manifests."
+
         keyField.stringValue = apiKey ?? ""
-        keyField.placeholderString = "Paste your Hubcap API key"
+        keyField.placeholderString = "Hubcap API key"
         keyField.font = .systemFont(ofSize: 13)
         keyField.controlSize = .large
         keyField.translatesAutoresizingMaskIntoConstraints = false
         keyField.setAccessibilityLabel("Hubcap API key")
 
-        let content = NSView(frame: NSRect(x: 0, y: 0, width: 450, height: 176))
-
-        let title = NSTextField(labelWithString: "Hubcap API key")
-        title.font = .systemFont(ofSize: 20, weight: .semibold)
-        title.textColor = .labelColor
-        title.translatesAutoresizingMaskIntoConstraints = false
-
-        let hint = NSTextField(
-            labelWithString: "Paste a key from your Hubcap account. macSteam stores it locally."
-        )
-        hint.font = .systemFont(ofSize: 12)
-        hint.textColor = .secondaryLabelColor
-        hint.lineBreakMode = .byTruncatingTail
-        hint.translatesAutoresizingMaskIntoConstraints = false
-        hint.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        let getKeyTarget = BlockTarget(openAPIKeys)
         let getKeyButton = NSButton(
             title: "Get API key",
-            target: getKeyTarget,
-            action: #selector(BlockTarget.invoke)
+            target: self,
+            action: #selector(openAPIKeysPressed)
         )
         getKeyButton.bezelStyle = .rounded
         getKeyButton.controlSize = .large
         getKeyButton.font = .systemFont(ofSize: 13, weight: .medium)
+        getKeyButton.contentTintColor = .controlAccentColor
         getKeyButton.translatesAutoresizingMaskIntoConstraints = false
         getKeyButton.widthAnchor.constraint(equalToConstant: 108).isActive = true
         getKeyButton.heightAnchor.constraint(equalToConstant: 32).isActive = true
+
+        let helper = NSTextField(labelWithString: "Stored locally by macSteam.")
+        helper.font = .systemFont(ofSize: 11)
+        helper.textColor = .secondaryLabelColor
+        helper.translatesAutoresizingMaskIntoConstraints = false
 
         let keyRow = NSStackView(views: [keyField, getKeyButton])
         keyRow.orientation = .horizontal
@@ -1108,153 +1098,49 @@ private final class HubcapSettingsWindowController: NSWindowController, NSWindow
         keyField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         keyField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let connectButton = NSButton(title: "Connect", target: nil, action: nil)
-        let disconnectButton = NSButton(title: "Disconnect", target: nil, action: nil)
-        let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
-
-        Self.style(connectButton, role: .primary, width: 88)
-        Self.style(disconnectButton, role: .destructive, width: 96)
-        Self.style(cancelButton, role: .secondary, width: 78)
-
-        let actions = NSStackView(views: [cancelButton, disconnectButton, connectButton])
-        actions.orientation = .horizontal
-        actions.alignment = .centerY
-        actions.spacing = 8
-        actions.translatesAutoresizingMaskIntoConstraints = false
-
-        content.addSubview(title)
-        content.addSubview(keyRow)
-        content.addSubview(hint)
-        content.addSubview(actions)
+        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 66))
+        accessory.addSubview(keyRow)
+        accessory.addSubview(helper)
 
         NSLayoutConstraint.activate([
-            title.topAnchor.constraint(equalTo: content.topAnchor),
-            title.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            title.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-
-            keyRow.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 12),
-            keyRow.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            keyRow.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            keyRow.topAnchor.constraint(equalTo: accessory.topAnchor),
+            keyRow.leadingAnchor.constraint(equalTo: accessory.leadingAnchor),
+            keyRow.trailingAnchor.constraint(equalTo: accessory.trailingAnchor),
             keyRow.heightAnchor.constraint(equalToConstant: 32),
 
-            hint.topAnchor.constraint(equalTo: keyRow.bottomAnchor, constant: 8),
-            hint.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            hint.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-
-            actions.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            actions.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            actions.topAnchor.constraint(equalTo: hint.bottomAnchor, constant: 18),
+            helper.topAnchor.constraint(equalTo: keyRow.bottomAnchor, constant: 8),
+            helper.leadingAnchor.constraint(equalTo: accessory.leadingAnchor),
+            helper.trailingAnchor.constraint(equalTo: accessory.trailingAnchor),
+            helper.bottomAnchor.constraint(equalTo: accessory.bottomAnchor),
         ])
 
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 490, height: 216),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "Hubcap"
-        window.isReleasedWhenClosed = false
-        window.contentView = content
-        window.center()
-        window.isMovableByWindowBackground = true
+        alert.accessoryView = accessory
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Disconnect")
+        alert.addButton(withTitle: "Connect")
 
-        super.init(window: window)
+        alert.buttons[0].keyEquivalent = "\u{1b}"
+        alert.buttons[2].keyEquivalent = "\r"
+        alert.buttons[1].isEnabled = apiKey != nil && !(apiKey?.isEmpty ?? true)
+    }
 
-        let connectTarget = BlockTarget { [weak self] in
-            self?.finish(.connect(self?.keyField.stringValue ?? ""))
+    func run() -> Result {
+        alert.window?.initialFirstResponder = keyField
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return .cancel
+        case .alertSecondButtonReturn:
+            return .disconnect
+        case .alertThirdButtonReturn:
+            return .connect(keyField.stringValue)
+        default:
+            return .cancel
         }
-        let disconnectTarget = BlockTarget { [weak self] in
-            self?.finish(.disconnect)
-        }
-        let cancelTarget = BlockTarget { [weak self] in
-            self?.finish(.cancel)
-        }
-
-        connectButton.target = connectTarget
-        connectButton.action = #selector(BlockTarget.invoke)
-
-        disconnectButton.target = disconnectTarget
-        disconnectButton.action = #selector(BlockTarget.invoke)
-
-        cancelButton.target = cancelTarget
-        cancelButton.action = #selector(BlockTarget.invoke)
-
-        disconnectButton.isEnabled = apiKey != nil && !(apiKey?.isEmpty ?? true)
-
-        actionTargets = [connectTarget, disconnectTarget, cancelTarget, getKeyTarget]
-
-        window.delegate = self
-        window.initialFirstResponder = keyField
-        window.defaultButtonCell = connectButton.cell as? NSButtonCell
     }
 
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func showWindow(_ sender: Any?) {
-        super.showWindow(sender)
-        window?.makeKeyAndOrderFront(nil)
-    }
-
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        finish(.cancel)
-        return false
-    }
-
-    private func finish(_ value: Result) {
-        result = value
-        guard let window else { return }
-        NSApp.abortModal()
-        window.orderOut(nil)
-        window.close()
-    }
-
-    private enum Role {
-        case primary
-        case secondary
-        case destructive
-    }
-
-    private static func style(_ button: NSButton, role: Role, width: CGFloat) {
-        button.bezelStyle = .rounded
-        button.controlSize = .regular
-        button.font = .systemFont(
-            ofSize: 13,
-            weight: role == .primary ? .semibold : .medium
-        )
-        button.alignment = .center
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.widthAnchor.constraint(equalToConstant: width).isActive = true
-        button.heightAnchor.constraint(equalToConstant: 30).isActive = true
-
-        switch role {
-        case .primary:
-            button.keyEquivalent = "\r"
-        case .secondary:
-            button.keyEquivalent = "\u{1b}"
-        case .destructive:
-            break
-        }
-
-        button.contentTintColor = {
-            switch role {
-            case .primary: return .controlAccentColor
-            case .secondary: return .labelColor
-            case .destructive: return .systemRed
-            }
-        }()
-    }
-}
-
-@MainActor
-private final class BlockTarget: NSObject {
-    private let block: () -> Void
-
-    init(_ block: @escaping () -> Void) {
-        self.block = block
-    }
-
-    @objc func invoke() {
-        block()
+    @objc private func openAPIKeysPressed() {
+        openAPIKeys()
     }
 }
 
