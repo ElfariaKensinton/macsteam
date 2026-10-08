@@ -254,25 +254,20 @@ final class HubcapViewController: NSViewController {
             tableView.reloadData()
             emptyLabel.isHidden = true
 
-            setBusy(true, status: "Loading Hubcap library…")
+            setBusy(true, status: "Loading Hubcap game catalog…")
             Task {
                 do {
-                    var loaded = try await fetchAllGames(apiKey: key)
-                    }
-                    let deduped = deduplicateAndSort(loaded)
-                    allGames = deduped
-                    totalCount = page.totalCount > 0 ? page.totalCount : deduped.count
+                    let loaded = try await fetchAllGames(apiKey: key)
+                    allGames = deduplicateAndSort(loaded)
+                    totalCount = allGames.count
                     applyFilter()
                     setBusy(false)
 
-                    if deduped.isEmpty {
-                        setStatus(
-                            "Hubcap returned an empty library.",
-                            tone: .bad
-                        )
+                    if allGames.isEmpty {
+                        setStatus("Hubcap returned no games.", tone: .bad)
                     } else {
                         setStatus(
-                            "Loaded \(deduped.count) of \(totalCount) games.",
+                            "Loaded \(allGames.count) games. Search is local; typing does not call Hubcap.",
                             tone: .ok
                         )
                     }
@@ -344,19 +339,7 @@ final class HubcapViewController: NSViewController {
 
         Task {
             do {
-                var loaded = try await client.allGames(apiKey: key)
-
-                // /games is the full-catalog endpoint used by current Hubcap clients.
-                // Keep /library as a compatibility fallback for deployments that don't expose it.
-                if loaded.isEmpty {
-                    let page = try await client.libraryPage(
-                        apiKey: key,
-                        limit: 1000,
-                        offset: 0
-                    )
-                    loaded = page.games
-                }
-
+                let loaded = try await fetchAllGames(apiKey: key)
                 allGames = deduplicateAndSort(loaded)
                 totalCount = allGames.count
                 applyFilter()
