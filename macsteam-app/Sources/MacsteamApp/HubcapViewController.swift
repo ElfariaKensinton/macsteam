@@ -497,7 +497,7 @@ final class HubcapViewController: NSViewController {
         if query.isEmpty {
             games = allGames
             tableView.reloadData()
-            resultCountLabel.stringValue = allGames.isEmpty ? "No games" : "(allGames.count) shown"
+            resultCountLabel.stringValue = allGames.isEmpty ? "No games" : "\(allGames.count) shown"
             emptyState.configure(
                 symbol: "books.vertical",
                 prompt: "Browse the Hubcap library",
@@ -522,7 +522,7 @@ final class HubcapViewController: NSViewController {
         }
 
         let normalized = query.localizedLowercase
-        let isAppID = query.allSatisfy(.isNumber)
+        let isAppID = query.allSatisfy { $0.isNumber }
 
         games = allGames.filter { game in
             if isAppID {
@@ -535,7 +535,7 @@ final class HubcapViewController: NSViewController {
 
         resultCountLabel.stringValue = games.isEmpty
             ? "No matches"
-            : "(games.count) result(games.count == 1 ? "" : "s")"
+            : "\(games.count) result\(games.count == 1 ? "" : "s")"
 
         emptyState.configure(
             symbol: "magnifyingglass",
@@ -544,7 +544,7 @@ final class HubcapViewController: NSViewController {
         )
         emptyState.isHidden = !games.isEmpty
         setStatus(
-            games.isEmpty ? "No games matched your search." : "(games.count) local result(s).",
+            games.isEmpty ? "No games matched your search." : "\(games.count) local result(s).",
             tone: games.isEmpty ? .neutral : .ok
         )
         tableView.reloadData()
@@ -562,7 +562,7 @@ final class HubcapViewController: NSViewController {
                 totalCount = snapshot.totalCount
                 loadedOffset = games.count
                 tableView.reloadData()
-                resultCountLabel.stringValue = "(games.count) cached games"
+                resultCountLabel.stringValue = "\(games.count) cached games"
                 emptyState.configure(
                     symbol: "books.vertical",
                     prompt: "Hubcap library",
@@ -570,7 +570,7 @@ final class HubcapViewController: NSViewController {
                 )
                 updateEmptyState()
                 setStatus(
-                    "Loaded (games.count) games from the local database. Updating in background…",
+                    "Loaded \(games.count) games from the local database. Updating in background…",
                     tone: .ok
                 )
                 scheduleSearch()
@@ -585,8 +585,9 @@ final class HubcapViewController: NSViewController {
     }
 
     private func refreshLibraryDatabaseInBackground() {
-        guard !isRefreshingCache,
-              let key = HubcapCredentialStore.apiKey else { return }
+        guard !isUpdatingCache, let key = HubcapCredentialStore.apiKey else { return }
+
+        isUpdatingCache = true
 
         cacheRefreshTask?.cancel()
         cacheRefreshTask = Task.detached(priority: .utility) { [client, libraryCache] in
@@ -623,7 +624,7 @@ final class HubcapViewController: NSViewController {
                         await MainActor.run { [weak self] in
                             guard let self, !self.isBusy else { return }
                             self.setStatus(
-                                "Updating Hubcap database… (progress)%",
+                                "Updating Hubcap database… \(progress)%",
                                 tone: .neutral
                             )
                         }
@@ -639,12 +640,13 @@ final class HubcapViewController: NSViewController {
 
                 await MainActor.run { [weak self] in
                     guard let self else { return }
+                    self.isUpdatingCache = false
                     self.allGames = self.deduplicateAndSort(collected)
                     self.totalCount = totalCount
                     self.loadedOffset = collected.count
                     self.games = self.allGames
                     self.tableView.reloadData()
-                    self.resultCountLabel.stringValue = "(self.allGames.count) games"
+                    self.resultCountLabel.stringValue = "\(self.allGames.count) games"
                     self.emptyState.configure(
                         symbol: "books.vertical",
                         prompt: "Hubcap library",
@@ -652,18 +654,21 @@ final class HubcapViewController: NSViewController {
                     )
                     self.updateEmptyState()
                     self.setStatus(
-                        "Hubcap database updated — (self.allGames.count) games available offline.",
+                        "Hubcap database updated — \(self.allGames.count) games available offline.",
                         tone: .ok
                     )
                     self.scheduleSearch()
                 }
             } catch is CancellationError {
-                // Refresh was superseded.
+                await MainActor.run { [weak self] in
+                    self?.isUpdatingCache = false
+                }
             } catch {
                 await MainActor.run { [weak self] in
+                    self?.isUpdatingCache = false
                     guard let self, !self.isBusy else { return }
                     self.setStatus(
-                        "Using the saved Hubcap database. Background update failed: (error.localizedDescription)",
+                        "Using the saved Hubcap database. Background update failed: \(error.localizedDescription)",
                         tone: .warn
                     )
                 }
@@ -674,7 +679,7 @@ final class HubcapViewController: NSViewController {
     private func applyLibraryRows() {
         games = deduplicateAndSort(allGames)
         tableView.reloadData()
-        resultCountLabel.stringValue = games.isEmpty ? "No games" : "(games.count) shown"
+        resultCountLabel.stringValue = games.isEmpty ? "No games" : "\(games.count) shown"
         emptyState.configure(
             symbol: "books.vertical",
             prompt: "Browse the Hubcap library",
@@ -727,10 +732,10 @@ final class HubcapViewController: NSViewController {
                 "Showing (allGames.count) of (totalCount). Search Hubcap or browse the loaded library.",
                 tone: .ok
             )
-            resultCountLabel.stringValue = "(games.count) shown"
+            resultCountLabel.stringValue = "\(games.count) shown"
         } else {
             setStatus("Loaded all (allGames.count) Hubcap games.", tone: .ok)
-            resultCountLabel.stringValue = "(games.count) shown"
+            resultCountLabel.stringValue = "\(games.count) shown"
         }
 
         loadMoreButton.isEnabled =
@@ -797,9 +802,7 @@ final class HubcapViewController: NSViewController {
 
     // MARK: Helpers
 
-    private var isRefreshingCache: Bool {
-        cacheRefreshTask != nil && !(cacheRefreshTask?.isCancelled ?? true)
-    }
+    private var isUpdatingCache = false
 
     private func currentKey() -> String? {
         guard let key = HubcapCredentialStore.apiKey else {
