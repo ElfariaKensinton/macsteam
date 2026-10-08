@@ -410,6 +410,7 @@ final class HubcapViewController: NSViewController {
             do {
                 let key = try validateHubcapKey(keyField.stringValue)
                 HubcapCredentialStore.save(key)
+                didStartCacheRefresh = false
                 updateAPIStatus()
                 allGames.removeAll()
                 games.removeAll()
@@ -466,7 +467,7 @@ final class HubcapViewController: NSViewController {
         searchTask?.cancel()
 
         if HubcapCredentialStore.apiKey != nil {
-            refreshLibraryDatabaseInBackground()
+            startBackgroundDatabaseRefresh(force: true)
         } else {
             loadLibrary(reset: true)
         }
@@ -575,10 +576,15 @@ final class HubcapViewController: NSViewController {
                 loadLibrary(reset: true)
             }
 
-            if HubcapCredentialStore.apiKey != nil {
-                refreshLibraryDatabaseInBackground()
-            }
+            startBackgroundDatabaseRefresh()
         }
+    }
+
+    func startBackgroundDatabaseRefresh(force: Bool = false) {
+        guard HubcapCredentialStore.apiKey != nil else { return }
+        if !force && didStartCacheRefresh { return }
+        didStartCacheRefresh = true
+        refreshLibraryDatabaseInBackground()
     }
 
     private func refreshLibraryDatabaseInBackground() {
@@ -638,6 +644,7 @@ final class HubcapViewController: NSViewController {
                 await MainActor.run { [weak self] in
                     guard let self else { return }
                     self.isUpdatingCache = false
+                    guard self.isViewLoaded else { return }
                     self.allGames = self.deduplicateAndSort(collected)
                     self.totalCount = totalCount
                     self.loadedOffset = collected.count
@@ -662,8 +669,9 @@ final class HubcapViewController: NSViewController {
                 }
             } catch {
                 await MainActor.run { [weak self] in
-                    self?.isUpdatingCache = false
-                    guard let self, !self.isBusy else { return }
+                    guard let self else { return }
+                    self.isUpdatingCache = false
+                    guard self.isViewLoaded, !self.isBusy else { return }
                     self.setStatus(
                         "Using the saved Hubcap database. Background update failed: \(error.localizedDescription)",
                         tone: .warn
