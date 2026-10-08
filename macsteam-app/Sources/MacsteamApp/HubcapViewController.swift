@@ -244,40 +244,43 @@ final class HubcapViewController: NSViewController {
     @objc private func saveKey() {
         guard !isBusy else { return }
 
+        let key: String
         do {
-            let key = try validatedKey()
+            key = try validatedKey()
             try KeychainStore.write(key, account: keychainAccount)
-            apiKeyField.stringValue = key
-            allGames.removeAll()
-            games.removeAll()
-            totalCount = 0
-            tableView.reloadData()
-            emptyLabel.isHidden = true
-
-            setBusy(true, status: "Loading Hubcap game catalog…")
-            Task {
-                do {
-                    let loaded = try await fetchAllGames(apiKey: key)
-                    allGames = deduplicateAndSort(loaded)
-                    totalCount = allGames.count
-                    applyFilter()
-                    setBusy(false)
-
-                    if allGames.isEmpty {
-                        setStatus("Hubcap returned no games.", tone: .bad)
-                    } else {
-                        setStatus(
-                            "Loaded \(allGames.count) games. Search is local; typing does not call Hubcap.",
-                            tone: .ok
-                        )
-                    }
-                } catch {
-                    setBusy(false)
-                    setStatus(error.localizedDescription, tone: .bad)
-                }
-            }
         } catch {
             setStatus(error.localizedDescription, tone: .bad)
+            return
+        }
+
+        apiKeyField.stringValue = key
+        allGames.removeAll()
+        games.removeAll()
+        totalCount = 0
+        tableView.reloadData()
+        emptyLabel.isHidden = true
+
+        setBusy(true, status: "Loading Hubcap game catalog…")
+        Task {
+            do {
+                let loaded = try await fetchAllGames(apiKey: key)
+                allGames = deduplicateAndSort(loaded)
+                totalCount = allGames.count
+                applyFilter()
+                setBusy(false)
+
+                if allGames.isEmpty {
+                    setStatus("Hubcap returned no games.", tone: .bad)
+                } else {
+                    setStatus(
+                        "Loaded \(allGames.count) games. Search is local; typing does not call Hubcap.",
+                        tone: .ok
+                    )
+                }
+            } catch {
+                setBusy(false)
+                setStatus(error.localizedDescription, tone: .bad)
+            }
         }
     }
 
