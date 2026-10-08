@@ -168,44 +168,31 @@ final class HubcapClient: @unchecked Sendable {
             )
         }
 
-        if let array = object as? [[String: Any]] {
-            let games = decodeGames(array)
-            guard !games.isEmpty || array.isEmpty else {
-                throw HubcapClientError.invalidResponse(
-                    endpoint: "/api/v1/library",
-                    preview: responsePreview(data)
-                )
-            }
-            return HubcapLibraryPage(totalCount: games.count, games: games)
-        }
+        let dictionaries = candidateDictionaries(from: object)
+        for payload in dictionaries {
+            let total =
+                intValue(payload["total_count"])
+                ?? intValue(payload["total"])
+                ?? intValue(payload["count"])
 
-        guard let root = object as? [String: Any] else {
-            throw HubcapClientError.invalidResponse(
-                endpoint: "/api/v1/library",
-                preview: responsePreview(data)
-            )
-        }
-
-        let payloads = candidateDictionaries(from: root)
-        for payload in payloads {
-            if let gamesValue = firstValue(in: payload, keys: ["games", "items", "results"]) {
-                let games = decodeGamesValue(gamesValue)
-                let total = intValue(payload["total_count"])
-                    ?? intValue(payload["total"])
-                    ?? intValue(payload["count"])
-
-                if !games.isEmpty || total == 0 || total == nil {
+            for key in ["games", "items", "results", "data"] {
+                guard let value = payload[key] else { continue }
+                let games = decodeGamesValue(value)
+                if !games.isEmpty || total == 0 {
                     return HubcapLibraryPage(
                         totalCount: total ?? games.count,
                         games: games
                     )
                 }
-
-                throw HubcapClientError.invalidResponse(
-                    endpoint: "/api/v1/library",
-                    preview: responsePreview(data)
-                )
             }
+        }
+
+        let directGames = decodeGamesValue(object)
+        if !directGames.isEmpty {
+            return HubcapLibraryPage(
+                totalCount: directGames.count,
+                games: directGames
+            )
         }
 
         throw HubcapClientError.invalidResponse(
@@ -214,14 +201,21 @@ final class HubcapClient: @unchecked Sendable {
         )
     }
 
-    private func candidateDictionaries(from root: [String: Any]) -> [[String: Any]] {
-        var candidates: [[String: Any]] = [root]
+    private func candidateDictionaries(from object: Any) -> [[String: Any]] {
+        guard let root = object as? [String: Any] else { return [] }
 
-        if let data = root["data"] as? [String: Any] {
-            candidates.append(contentsOf: candidateDictionaries(from: data))
-        }
-        if let result = root["result"] as? [String: Any] {
-            candidates.append(contentsOf: candidateDictionaries(from: result))
+        var candidates: [[String: Any]] = []
+        var queue: [[String: Any]] = [root]
+
+        while !queue.isEmpty {
+            let current = queue.removeFirst()
+            candidates.append(current)
+
+            for key in ["data", "result", "payload", "response"] {
+                if let nested = current[key] as? [String: Any] {
+                    queue.append(nested)
+                }
+            }
         }
 
         return candidates
@@ -241,34 +235,49 @@ final class HubcapClient: @unchecked Sendable {
             return decodeGames(items)
         }
 
-        if let map = value as? [String: Any] {
-            var games: [HubcapGame] = []
-
-            for (key, rawValue) in map {
-                if let name = stringValue(rawValue) {
-                    games.append(HubcapGame(id: key, name: name))
-                    continue
-                }
-
-                if let item = rawValue as? [String: Any] {
-                    let itemWithFallbackID: [String: Any]
-                    if item["app_id"] == nil && item["game_id"] == nil &&
-                       item["appid"] == nil && item["gameid"] == nil {
-                        itemWithFallbackID = item.merging(["app_id": key]) { current, _ in current }
-                    } else {
-                        itemWithFallbackID = item
-                    }
-
-                    if let game = decodeGame(itemWithFallbackID) {
-                        games.append(game)
-                    }
-                }
-            }
-
-            return games
+        if let array = value as? [Any] {
+            return array.flatMap { decodeGamesValue($0) }
         }
 
-        return []
+        guard let dictionary = value as? [String: Any] else { return [] }
+
+        if let game = decodeGame(dictionary) {
+            return [game]
+        }
+
+        for key in ["games", "items", "results", "data"] {
+            if let nested = dictionary[key] {
+                let games = decodeGamesValue(nested)
+                if !games.isEmpty {
+                    return games
+                }
+            }
+        }
+
+        var games: [HubcapGame] = []
+        for (key, rawValue) in dictionary {
+            if let name = stringValue(rawValue) {
+                games.append(HubcapGame(id: key, name: name))
+                continue
+            }
+
+            if let item = rawValue as? [String: Any] {
+                var itemWithFallbackID = item
+                if itemWithFallbackID["app_id"] == nil &&
+                   itemWithFallbackID["game_id"] == nil &&
+                   itemWithFallbackID["appid"] == nil &&
+                   itemWithFallbackID["gameid"] == nil &&
+                   itemWithFallbackID["id"] == nil {
+                    itemWithFallbackID["app_id"] = key
+                }
+
+                if let game = decodeGame(itemWithFallbackID) {
+                    games.append(game)
+                }
+            }
+        }
+
+        return games
     }
 
     private func decodeGames(_ items: [[String: Any]]) -> [HubcapGame] {
