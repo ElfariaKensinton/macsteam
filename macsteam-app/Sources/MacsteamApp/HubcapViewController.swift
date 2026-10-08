@@ -987,12 +987,17 @@ private final class HubcapGameCell: NSTableCellView {
 
         guard let url = game.headerImageURL else { return }
 
+        // Never block first-paint on remote Steam art. Use memory cache immediately;
+        // fetch uncached art only after the row has rendered.
         if let cached = Self.imageCache.object(forKey: url as NSURL) {
             iconView.image = cached
             return
         }
 
         imageTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+
             do {
                 let (data, _) = try await URLSession.shared.data(from: url)
                 guard let image = NSImage(data: data), !Task.isCancelled else { return }
@@ -1000,7 +1005,7 @@ private final class HubcapGameCell: NSTableCellView {
                 guard let self, self.representedID == game.id else { return }
                 self.iconView.image = image
             } catch {
-                // Keep the built-in icon if Steam art is unavailable.
+                // Keep the lightweight built-in icon if Steam art is unavailable.
             }
         }
     }
