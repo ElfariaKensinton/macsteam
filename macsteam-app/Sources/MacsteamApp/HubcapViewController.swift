@@ -246,21 +246,41 @@ final class HubcapViewController: NSViewController {
 
         do {
             let key = try validatedKey()
-            setBusy(true, status: "Verifying Hubcap API key…")
+            try KeychainStore.write(key, account: keychainAccount)
+            apiKeyField.stringValue = key
+            allGames.removeAll()
+            games.removeAll()
+            totalCount = 0
+            tableView.reloadData()
+            emptyLabel.isHidden = true
 
+            setBusy(true, status: "Loading Hubcap library…")
             Task {
                 do {
-                    let stats = try await client.userStats(apiKey: key)
-                    try KeychainStore.write(key, account: keychainAccount)
-                    apiKeyField.stringValue = key
+                    let page = try await client.libraryPage(
+                        apiKey: key,
+                        limit: 1000,
+                        offset: 0
+                    )
 
+                    let loaded = page.games
+                    let deduped = deduplicateAndSort(loaded)
+                    allGames = deduped
+                    totalCount = page.totalCount > 0 ? page.totalCount : deduped.count
+                    applyFilter()
                     setBusy(false)
-                    if let usage = usageText(stats) {
-                        setStatus("API key verified. \(usage)", tone: .ok)
+
+                    if deduped.isEmpty {
+                        setStatus(
+                            "Hubcap returned an empty library.",
+                            tone: .bad
+                        )
                     } else {
-                        setStatus("API key verified. Loading library…", tone: .ok)
+                        setStatus(
+                            "Loaded \(deduped.count) of \(totalCount) games.",
+                            tone: .ok
+                        )
                     }
-                    loadLibrary()
                 } catch {
                     setBusy(false)
                     setStatus(error.localizedDescription, tone: .bad)
@@ -309,49 +329,25 @@ final class HubcapViewController: NSViewController {
 
         Task {
             do {
-                var loaded: [HubcapGame] = []
-                var offset = 0
-                var total = 0
+                let page = try await client.libraryPage(
+                    apiKey: key,
+                    limit: 1000,
+                    offset: 0
+                )
 
-                while true {
-                    let page = try await client.libraryPage(
-                        apiKey: key,
-                        limit: 1000,
-                        offset: offset
-                    )
-
-                    loaded.append(contentsOf: page.games)
-                    total = page.totalCount
-
-                    guard !page.games.isEmpty, loaded.count < total else {
-                        break
-                    }
-
-                    let nextOffset = offset + page.games.count
-                    guard nextOffset > offset else {
-                        break
-                    }
-                    offset = nextOffset
-                }
-
-                var seen = Set<String>()
-                allGames = loaded
-                    .filter { seen.insert($0.id).inserted }
-                    .sorted {
-                        let order = $0.name.localizedCaseInsensitiveCompare($1.name)
-                        if order == .orderedSame {
-                            return $0.id.localizedStandardCompare($1.id) == .orderedAscending
-                        }
-                        return order == .orderedAscending
-                    }
-
-                totalCount = total > 0 ? total : allGames.count
+                allGames = deduplicateAndSort(page.games)
+                totalCount = page.totalCount > 0 ? page.totalCount : allGames.count
                 applyFilter()
                 setBusy(false)
-                setStatus(
-                    "Loaded \(allGames.count) games. Search is local and does not call the API.",
-                    tone: .ok
-                )
+
+                if allGames.isEmpty {
+                    setStatus("Hubcap returned an empty library.", tone: .bad)
+                } else {
+                    setStatus(
+                        "Loaded \(allGames.count) of \(totalCount) games.",
+                        tone: .ok
+                    )
+                }
             } catch {
                 setBusy(false)
                 setStatus(error.localizedDescription, tone: .bad)
@@ -359,31 +355,17 @@ final class HubcapViewController: NSViewController {
         }
     }
 
-    private func applyFilter() {
-        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if query.isEmpty {
-            games = allGames
-            emptyLabel.stringValue = "No games returned by Hubcap."
-        } else if query.allSatisfy({ $0.isNumber }) {
-            games = allGames.filter { $0.id == query }
-            emptyLabel.stringValue = "No game matches App ID \(query)."
-        } else {
-            games = allGames.filter {
-                $0.name.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+    private func deduplicateAndSort(_ input: [HubcapGame]) -> [HubcapGame] {
+        var seen = Set<String>()
+        return input
+            .filter { seen.insert($0.id).inserted }
+            .sorted {
+                let order = $0.name.localizedCaseInsensitiveCompare($1.name)
+                if order == .orderedSame {
+                    return $0.id.localizedStandardCompare($1.id) == .orderedAscending
+                }
+                return order == .orderedAscending
             }
-            emptyLabel.stringValue = "No games match “\(query)”."
-        }
-
-        tableView.reloadData()
-        emptyLabel.isHidden = !games.isEmpty
-
-        guard !isBusy else { return }
-        if query.isEmpty {
-            setStatus("\(allGames.count) games available in Hubcap.", tone: .ok)
-        } else {
-            setStatus("\(games.count) match “\(query)”.", tone: .neutral)
-        }
     }
 
     private func install(game: HubcapGame) {
