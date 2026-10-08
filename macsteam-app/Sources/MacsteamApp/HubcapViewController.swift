@@ -1083,16 +1083,15 @@ private final class HubcapSettingsWindowController: NSWindowController, NSWindow
         hint.textColor = .secondaryLabelColor
         hint.translatesAutoresizingMaskIntoConstraints = false
 
+        let getKeyTarget = BlockTarget(openAPIKeys)
         let getKeyButton = NSButton(
             title: "Get API key",
-            target: nil,
-            action: nil
+            target: getKeyTarget,
+            action: #selector(BlockTarget.invoke)
         )
         getKeyButton.bezelStyle = .rounded
         getKeyButton.controlSize = .small
         getKeyButton.font = .systemFont(ofSize: 12, weight: .medium)
-        getKeyButton.target = BlockTarget(openAPIKeys)
-        getKeyButton.action = #selector(BlockTarget.invoke)
         getKeyButton.translatesAutoresizingMaskIntoConstraints = false
 
         let connectButton = NSButton(title: "Connect", target: nil, action: nil)
@@ -1178,7 +1177,7 @@ private final class HubcapSettingsWindowController: NSWindowController, NSWindow
         cancelButton.action = #selector(BlockTarget.invoke)
 
         // Retain action targets for the lifetime of the window.
-        actionTargets = [connectTarget, disconnectTarget, cancelTarget, getKeyButton.target as! BlockTarget]
+        actionTargets = [connectTarget, disconnectTarget, cancelTarget, getKeyTarget]
 
         window.delegate = self
         window.initialFirstResponder = keyField
