@@ -716,7 +716,7 @@ final class HubcapViewController: NSViewController {
                 let usage = try await hubcapClient.usage(apiKey: key)
                 guard !Task.isCancelled else { return }
                 guard HubcapCredentialStore.apiKey == key else { return }
-                self?.apiStatusTitle?.stringValue = "Connected • \(usage.count)"
+                self?.apiStatusTitle?.stringValue = "Connected • \(usage.single.usage)"
             } catch {
                 // Keep the connected state visible even if the usage endpoint is unavailable.
             }
