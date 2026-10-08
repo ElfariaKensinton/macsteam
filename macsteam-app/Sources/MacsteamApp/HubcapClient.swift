@@ -152,7 +152,7 @@ enum HubcapClientError: LocalizedError {
 final class HubcapClient: @unchecked Sendable {
     static let apiKeysURL = URL(string: "https://hubcapmanifest.com/api-keys/")!
 
-    private static let steamNameCache = NSCache<NSNumber, NSString>()
+    private let steamNameCache = NSCache<NSNumber, NSString>()
     private let session: URLSession
     private let baseURL = URL(string: "https://hubcapmanifest.com")!
 
@@ -232,7 +232,7 @@ final class HubcapClient: @unchecked Sendable {
 
     func steamAppName(appID: Int) async -> String? {
         let cacheKey = NSNumber(value: appID)
-        if let cached = Self.steamNameCache.object(forKey: cacheKey) {
+        if let cached = steamNameCache.object(forKey: cacheKey) {
             return cached as String
         }
 
@@ -270,7 +270,7 @@ final class HubcapClient: @unchecked Sendable {
                 return nil
             }
 
-            Self.steamNameCache.setObject(name as NSString, forKey: cacheKey)
+            steamNameCache.setObject(name as NSString, forKey: cacheKey)
             return name
         } catch {
             return nil
