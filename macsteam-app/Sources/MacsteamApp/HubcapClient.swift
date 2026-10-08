@@ -30,7 +30,7 @@ private struct HubcapLibraryGame: Decodable {
         let trimmed = gameName?.trimmingCharacters(in: .whitespacesAndNewlines)
         return HubcapGame(
             id: gameID,
-            name: (trimmed?.isEmpty == false) ? trimmed! : "App (gameID)"
+            name: (trimmed?.isEmpty == false) ? trimmed! : "App \(gameID)"
         )
     }
 }
