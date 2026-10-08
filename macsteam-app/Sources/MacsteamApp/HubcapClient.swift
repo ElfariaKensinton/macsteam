@@ -35,7 +35,7 @@ enum HubcapClientError: LocalizedError {
             return "Hubcap doesn't have a Lua manifest for this game."
         case .http(let status):
             return "Hubcap returned HTTP \(status)."
-        case .invalidResponse:
+        case .invalidResponse(let endpoint):
             return "Hubcap returned an unexpected response from \(endpoint)."
         }
     }
@@ -144,13 +144,13 @@ final class HubcapClient: @unchecked Sendable {
         if let array = object as? [[String: Any]] {
             let games = decodeGames(array)
             guard !games.isEmpty || array.isEmpty else {
-                throw HubcapClientError.invalidResponse
+                throw HubcapClientError.invalidResponse(endpoint: "/api/v1/library")
             }
             return HubcapLibraryPage(totalCount: games.count, games: games)
         }
 
         guard let root = object as? [String: Any] else {
-            throw HubcapClientError.invalidResponse
+            throw HubcapClientError.invalidResponse(endpoint: "/api/v1/library")
         }
 
         let payloads = candidateDictionaries(from: root)
@@ -168,11 +168,11 @@ final class HubcapClient: @unchecked Sendable {
                     )
                 }
 
-                throw HubcapClientError.invalidResponse
+                throw HubcapClientError.invalidResponse(endpoint: "/api/v1/library")
             }
         }
 
-        throw HubcapClientError.invalidResponse
+        throw HubcapClientError.invalidResponse(endpoint: "/api/v1/library")
     }
 
     private func candidateDictionaries(from root: [String: Any]) -> [[String: Any]] {
