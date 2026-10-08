@@ -946,7 +946,6 @@ private final class HubcapGameCell: NSTableCellView {
 
     deinit {
         imageTask?.cancel()
-        nameTask?.cancel()
     }
 
     override func prepareForReuse() {
