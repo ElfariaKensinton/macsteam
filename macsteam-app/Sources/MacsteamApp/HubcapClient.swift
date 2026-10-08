@@ -168,7 +168,6 @@ final class HubcapClient: @unchecked Sendable {
         components.queryItems = [
             URLQueryItem(name: "limit", value: String(min(max(limit, 1), 1000))),
             URLQueryItem(name: "offset", value: String(max(offset, 0))),
-            URLQueryItem(name: "sort_by", value: "name"),
         ]
 
         let request = try makeRequest(
