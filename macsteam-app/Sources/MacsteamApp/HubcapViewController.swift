@@ -1095,7 +1095,7 @@ private final class HubcapSettingsDialogController: NSObject {
         helper.textColor = .secondaryLabelColor
         helper.translatesAutoresizingMaskIntoConstraints = false
 
-        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 66))
+        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 66))
         accessory.addSubview(keyRow)
         accessory.addSubview(helper)
 
@@ -1113,9 +1113,11 @@ private final class HubcapSettingsDialogController: NSObject {
 
         alert.accessoryView = accessory
 
-        connectButton = alert.addButton(withTitle: "Connect")
-        disconnectButton = alert.addButton(withTitle: "Disconnect")
+        // NSAlert places the first-added native button on the trailing edge.
+        // Add in reverse visual order to get: Connect | Disconnect | Cancel.
         cancelButton = alert.addButton(withTitle: "Cancel")
+        disconnectButton = alert.addButton(withTitle: "Disconnect")
+        connectButton = alert.addButton(withTitle: "Connect")
 
         disconnectButton.isEnabled = apiKey != nil && !(apiKey?.isEmpty ?? true)
         connectButton.keyEquivalent = "\r"
@@ -1123,38 +1125,15 @@ private final class HubcapSettingsDialogController: NSObject {
 
     func run() -> Result {
         alert.window.initialFirstResponder = keyField
-
-        // Let NSAlert finish its native layout, then move only the existing native
-        // response buttons as a group. Their native size, font, tint and bezel style
-        // are untouched.
         alert.layout()
-        alert.window.contentView?.layoutSubtreeIfNeeded()
-
-        if let contentView = alert.window.contentView {
-            let buttons = [connectButton, disconnectButton, cancelButton]
-            let gap: CGFloat = 8
-            let rightInset: CGFloat = 20
-            let baselineY = buttons.map(\.frame.minY).min() ?? 0
-            var rightEdge = contentView.bounds.width - rightInset
-
-            // Visual order is Connect | Disconnect | Cancel while pinning the group
-            // to the trailing edge of the alert content area.
-            for button in buttons.reversed() {
-                var frame = button.frame
-                frame.origin.x = rightEdge - frame.width
-                frame.origin.y = baselineY
-                button.frame = frame
-                rightEdge = frame.minX - gap
-            }
-        }
 
         switch alert.runModal() {
         case .alertFirstButtonReturn:
-            return .connect(keyField.stringValue)
+            return .cancel
         case .alertSecondButtonReturn:
             return .disconnect
         case .alertThirdButtonReturn:
-            return .cancel
+            return .connect(keyField.stringValue)
         default:
             return .cancel
         }
