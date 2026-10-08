@@ -1065,23 +1065,27 @@ private final class HubcapSettingsWindowController: NSWindowController, NSWindow
     init(apiKey: String?, openAPIKeys: @escaping () -> Void) {
         keyField = NSSecureTextField()
         keyField.stringValue = apiKey ?? ""
-        keyField.placeholderString = "Paste Hubcap API key"
+        keyField.placeholderString = "Paste your Hubcap API key"
         keyField.font = .systemFont(ofSize: 13)
+        keyField.controlSize = .large
         keyField.translatesAutoresizingMaskIntoConstraints = false
         keyField.setAccessibilityLabel("Hubcap API key")
 
-        let content = NSView(frame: NSRect(x: 0, y: 0, width: 430, height: 118))
-        content.wantsLayer = true
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 450, height: 176))
 
-        let title = NSTextField(labelWithString: "Hubcap API")
-        title.font = .systemFont(ofSize: 18, weight: .semibold)
+        let title = NSTextField(labelWithString: "Hubcap API key")
+        title.font = .systemFont(ofSize: 20, weight: .semibold)
         title.textColor = .labelColor
         title.translatesAutoresizingMaskIntoConstraints = false
 
-        let hint = NSTextField(labelWithString: "Your key is stored locally by macSteam.")
+        let hint = NSTextField(
+            labelWithString: "Paste a key from your Hubcap account. macSteam stores it locally."
+        )
         hint.font = .systemFont(ofSize: 12)
         hint.textColor = .secondaryLabelColor
+        hint.lineBreakMode = .byTruncatingTail
         hint.translatesAutoresizingMaskIntoConstraints = false
+        hint.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let getKeyTarget = BlockTarget(openAPIKeys)
         let getKeyButton = NSButton(
@@ -1090,72 +1094,69 @@ private final class HubcapSettingsWindowController: NSWindowController, NSWindow
             action: #selector(BlockTarget.invoke)
         )
         getKeyButton.bezelStyle = .rounded
-        getKeyButton.controlSize = .small
-        getKeyButton.font = .systemFont(ofSize: 12, weight: .medium)
+        getKeyButton.controlSize = .large
+        getKeyButton.font = .systemFont(ofSize: 13, weight: .medium)
         getKeyButton.translatesAutoresizingMaskIntoConstraints = false
+        getKeyButton.widthAnchor.constraint(equalToConstant: 108).isActive = true
+        getKeyButton.heightAnchor.constraint(equalToConstant: 32).isActive = true
+
+        let keyRow = NSStackView(views: [keyField, getKeyButton])
+        keyRow.orientation = .horizontal
+        keyRow.alignment = .centerY
+        keyRow.spacing = 8
+        keyRow.translatesAutoresizingMaskIntoConstraints = false
+        keyField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        keyField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let connectButton = NSButton(title: "Connect", target: nil, action: nil)
         let disconnectButton = NSButton(title: "Disconnect", target: nil, action: nil)
         let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
 
-        Self.style(connectButton, role: .primary, width: 86)
+        Self.style(connectButton, role: .primary, width: 88)
         Self.style(disconnectButton, role: .destructive, width: 96)
-        Self.style(cancelButton, role: .secondary, width: 76)
+        Self.style(cancelButton, role: .secondary, width: 78)
+
+        let actions = NSStackView(views: [cancelButton, disconnectButton, connectButton])
+        actions.orientation = .horizontal
+        actions.alignment = .centerY
+        actions.spacing = 8
+        actions.translatesAutoresizingMaskIntoConstraints = false
 
         content.addSubview(title)
-        content.addSubview(keyField)
+        content.addSubview(keyRow)
         content.addSubview(hint)
-        content.addSubview(getKeyButton)
-        content.addSubview(connectButton)
-        content.addSubview(disconnectButton)
-        content.addSubview(cancelButton)
+        content.addSubview(actions)
 
         NSLayoutConstraint.activate([
             title.topAnchor.constraint(equalTo: content.topAnchor),
             title.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            title.trailingAnchor.constraint(equalTo: content.trailingAnchor),
 
-            keyField.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 10),
-            keyField.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            keyField.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            keyField.heightAnchor.constraint(equalToConstant: 30),
+            keyRow.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 12),
+            keyRow.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            keyRow.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            keyRow.heightAnchor.constraint(equalToConstant: 32),
 
+            hint.topAnchor.constraint(equalTo: keyRow.bottomAnchor, constant: 8),
             hint.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            hint.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            hint.trailingAnchor.constraint(lessThanOrEqualTo: getKeyButton.leadingAnchor, constant: -12),
+            hint.trailingAnchor.constraint(equalTo: content.trailingAnchor),
 
-            getKeyButton.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            getKeyButton.centerYAnchor.constraint(equalTo: hint.centerYAnchor),
-            getKeyButton.widthAnchor.constraint(equalToConstant: 104),
-            getKeyButton.heightAnchor.constraint(equalToConstant: 24),
-
-            cancelButton.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            cancelButton.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            cancelButton.widthAnchor.constraint(equalToConstant: 76),
-            cancelButton.heightAnchor.constraint(equalToConstant: 28),
-
-            disconnectButton.trailingAnchor.constraint(equalTo: cancelButton.leadingAnchor, constant: -8),
-            disconnectButton.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            disconnectButton.widthAnchor.constraint(equalToConstant: 96),
-            disconnectButton.heightAnchor.constraint(equalToConstant: 28),
-
-            connectButton.trailingAnchor.constraint(equalTo: disconnectButton.leadingAnchor, constant: -8),
-            connectButton.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            connectButton.widthAnchor.constraint(equalToConstant: 86),
-            connectButton.heightAnchor.constraint(equalToConstant: 28),
+            actions.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            actions.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            actions.topAnchor.constraint(equalTo: hint.bottomAnchor, constant: 18),
         ])
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 470, height: 178),
+            contentRect: NSRect(x: 0, y: 0, width: 490, height: 216),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
-        window.title = "Hubcap API"
+        window.title = "Hubcap"
         window.isReleasedWhenClosed = false
         window.contentView = content
         window.center()
         window.isMovableByWindowBackground = true
-        window.delegate = nil
 
         super.init(window: window)
 
@@ -1171,16 +1172,20 @@ private final class HubcapSettingsWindowController: NSWindowController, NSWindow
 
         connectButton.target = connectTarget
         connectButton.action = #selector(BlockTarget.invoke)
+
         disconnectButton.target = disconnectTarget
         disconnectButton.action = #selector(BlockTarget.invoke)
+
         cancelButton.target = cancelTarget
         cancelButton.action = #selector(BlockTarget.invoke)
 
-        // Retain action targets for the lifetime of the window.
+        disconnectButton.isEnabled = apiKey != nil && !(apiKey?.isEmpty ?? true)
+
         actionTargets = [connectTarget, disconnectTarget, cancelTarget, getKeyTarget]
 
         window.delegate = self
         window.initialFirstResponder = keyField
+        window.defaultButtonCell = connectButton.cell as? NSButtonCell
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -1211,9 +1216,25 @@ private final class HubcapSettingsWindowController: NSWindowController, NSWindow
 
     private static func style(_ button: NSButton, role: Role, width: CGFloat) {
         button.bezelStyle = .rounded
-        button.controlSize = .small
-        button.font = .systemFont(ofSize: 12, weight: role == .primary ? .semibold : .medium)
+        button.controlSize = .regular
+        button.font = .systemFont(
+            ofSize: 13,
+            weight: role == .primary ? .semibold : .medium
+        )
         button.alignment = .center
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.widthAnchor.constraint(equalToConstant: width).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 30).isActive = true
+
+        switch role {
+        case .primary:
+            button.keyEquivalent = "\r"
+        case .secondary:
+            button.keyEquivalent = "\u{1b}"
+        case .destructive:
+            break
+        }
+
         button.contentTintColor = {
             switch role {
             case .primary: return .controlAccentColor
@@ -1221,9 +1242,6 @@ private final class HubcapSettingsWindowController: NSWindowController, NSWindow
             case .destructive: return .systemRed
             }
         }()
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.widthAnchor.constraint(equalToConstant: width).isActive = true
-        button.heightAnchor.constraint(equalToConstant: 28).isActive = true
     }
 }
 
