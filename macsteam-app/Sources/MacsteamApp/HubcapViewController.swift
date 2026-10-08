@@ -576,6 +576,9 @@ extension HubcapViewController: NSTableViewDataSource, NSTableViewDelegate {
             ?? HubcapGameCell(identifier: identifier)
 
         let game = games[row]
+        cell.onResolveName = { [client] appID in
+            await client.steamAppName(appID: appID)
+        }
         cell.configure(game: game)
         cell.onInstall = { [weak self] in
             self?.install(game: game)
@@ -605,6 +608,7 @@ private final class HubcapGameCell: NSTableCellView {
     private var representedID = ""
 
     var onInstall: (() -> Void)?
+    var onResolveName: ((Int) async -> String?)?
 
     init(identifier: NSUserInterfaceItemIdentifier) {
         super.init(frame: .zero)
@@ -687,6 +691,18 @@ private final class HubcapGameCell: NSTableCellView {
         nameLabel.stringValue = game.name
         let type = game.appType?.capitalized ?? "App"
         metaLabel.stringValue = "App ID \(game.id)  •  \(type)"
+
+        if game.name == "App \(game.id)", let appID = game.appID {
+            let expectedID = game.id
+            let resolver = onResolveName
+            nameLabel.stringValue = "Loading game name…"
+
+            Task { [weak self] in
+                guard let resolver, let resolved = await resolver(appID) else { return }
+                guard let self, self.representedID == expectedID else { return }
+                self.nameLabel.stringValue = resolved
+            }
+        }
 
         installButton.isEnabled = game.appID != nil && game.manifestAvailable
 
