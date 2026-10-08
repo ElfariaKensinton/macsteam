@@ -401,7 +401,7 @@ final class HubcapViewController: NSViewController {
             resultCountLabel.stringValue = "Ready to connect"
             setStatus("Hubcap disconnected.", tone: .neutral)
 
-        case .cancel, .none:
+        case .cancel:
             break
         }
     }
