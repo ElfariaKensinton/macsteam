@@ -5,7 +5,7 @@ enum KeychainStore {
     private static let service = "com.macsteam.hubcap"
 
     static func read(account: String) -> String? {
-        var query: [CFString: Any] = [
+        let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
             kSecAttrAccount: account,
