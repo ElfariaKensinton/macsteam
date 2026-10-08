@@ -54,6 +54,7 @@ final class HubcapClient: @unchecked Sendable {
         components.queryItems = [
             URLQueryItem(name: "limit", value: String(min(max(limit, 1), 100))),
             URLQueryItem(name: "offset", value: String(max(offset, 0))),
+            URLQueryItem(name: "sort_by", value: "name"),
         ]
         let request = try makeRequest(url: components.url!, apiKey: apiKey)
         let (data, response) = try await session.data(for: request)
