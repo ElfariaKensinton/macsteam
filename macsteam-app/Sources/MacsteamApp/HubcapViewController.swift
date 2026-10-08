@@ -244,9 +244,9 @@ final class HubcapViewController: NSViewController {
         }
 
         if allGames.isEmpty {
-            loadLibrary()
+            loadLibrary(reset: true)
         } else {
-            applyFilter()
+            scheduleSearch()
         }
     }
 
@@ -340,7 +340,7 @@ final class HubcapViewController: NSViewController {
             return
         }
 
-        let isAppID = query.allSatisfy(\{ $0.isNumber \})
+        let isAppID = query.allSatisfy({ $0.isNumber })
         guard let key = currentKey() else { return }
 
         searchTask = Task { [weak self] in
