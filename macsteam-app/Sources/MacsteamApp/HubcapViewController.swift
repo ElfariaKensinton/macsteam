@@ -900,6 +900,8 @@ private final class HubcapGameCell: NSTableCellView {
 
         actionButton.bezelStyle = .rounded
         actionButton.controlSize = .regular
+        actionButton.font = .systemFont(ofSize: 13, weight: .semibold)
+        actionButton.contentTintColor = .controlAccentColor
         actionButton.target = self
         actionButton.action = #selector(installPressed)
         actionButton.translatesAutoresizingMaskIntoConstraints = false
