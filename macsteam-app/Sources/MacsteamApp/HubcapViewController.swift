@@ -133,7 +133,7 @@ final class HubcapViewController: NSViewController {
         tableView.style = .inset
 
         let gameColumn = NSTableColumn(identifier: .init("game"))
-        gameColumn.resizingMask = .autoresizesAllColumns
+        gameColumn.resizingMask = .autoresizingMask
         tableView.addTableColumn(gameColumn)
 
         let scroll = makeScrollView()
