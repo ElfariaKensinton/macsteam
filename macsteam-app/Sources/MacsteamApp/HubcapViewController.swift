@@ -22,6 +22,7 @@ final class HubcapViewController: NSViewController {
     private var spinner: NSProgressIndicator!
     private var emptyState: EmptyStateView!
     private var installedCountLabel: NSTextField!
+    private var usageTask: Task<Void, Never>?
 
     private var allGames: [HubcapGame] = []
     private var games: [HubcapGame] = []
@@ -354,6 +355,7 @@ final class HubcapViewController: NSViewController {
 
     deinit {
         searchTask?.cancel()
+        usageTask?.cancel()
     }
 
     // MARK: Hubcap settings
@@ -685,17 +687,39 @@ final class HubcapViewController: NSViewController {
     }
 
     private func updateAPIStatus() {
-        let hasKey = HubcapCredentialStore.apiKey != nil
+        usageTask?.cancel()
+
+        guard let key = HubcapCredentialStore.apiKey else {
+            apiStatusIcon?.image = NSImage(
+                systemSymbolName: "circle",
+                accessibilityDescription: "Not connected"
+            )
+            apiStatusIcon?.symbolConfiguration = .init(pointSize: 10, weight: .semibold)
+            apiStatusIcon?.contentTintColor = Colors.secondaryText
+            apiStatusTitle?.stringValue = "Not connected"
+            apiStatusDetail?.stringValue = "Add an access key in Settings."
+            return
+        }
+
         apiStatusIcon?.image = NSImage(
-            systemSymbolName: hasKey ? "circle.fill" : "circle",
-            accessibilityDescription: hasKey ? "Connected" : "Not connected"
+            systemSymbolName: "circle.fill",
+            accessibilityDescription: "Connected"
         )
         apiStatusIcon?.symbolConfiguration = .init(pointSize: 10, weight: .semibold)
-        apiStatusIcon?.contentTintColor = hasKey ? .systemGreen : Colors.secondaryText
-        apiStatusTitle?.stringValue = hasKey ? "Connected" : "Not connected"
-        apiStatusDetail?.stringValue = hasKey
-            ? "Hubcap access is ready."
-            : "Add an access key in Settings."
+        apiStatusIcon?.contentTintColor = .systemGreen
+        apiStatusTitle?.stringValue = "Connected"
+        apiStatusDetail?.stringValue = "Hubcap access is ready."
+
+        usageTask = Task { [weak self, client] in
+            do {
+                let usage = try await client.usage(apiKey: key)
+                guard !Task.isCancelled else { return }
+                guard HubcapCredentialStore.apiKey == key else { return }
+                self?.apiStatusTitle?.stringValue = "Connected • (usage.count)"
+            } catch {
+                // Keep the connected state visible even if the usage endpoint is unavailable.
+            }
+        }
     }
 
     private func resultSummary(count: Int, search: String) -> String {
