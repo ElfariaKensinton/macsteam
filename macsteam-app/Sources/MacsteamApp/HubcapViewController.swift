@@ -373,9 +373,11 @@ final class HubcapViewController: NSViewController {
 
         switch controller.result {
         case .connect(let key):
+            connectHubcap(rawKey: key)
+
+        case .disconnect:
             do {
-                let key = try validateHubcapKey(key)
-                HubcapCredentialStore.save(key)
+                try HubcapCredentialStore.remove()
                 updateAPIStatus()
                 allGames.removeAll()
                 games.removeAll()
@@ -383,23 +385,12 @@ final class HubcapViewController: NSViewController {
                 loadedOffset = 0
                 tableView.reloadData()
                 updateEmptyState()
-                loadLibrary(reset: true)
+                loadMoreButton.isEnabled = false
+                resultCountLabel.stringValue = "Ready to connect"
+                setStatus("Hubcap disconnected.", tone: .neutral)
             } catch {
-                setStatus(error.localizedDescription, tone: .bad)
+                setStatus("Could not remove the Hubcap API key: \\(error.localizedDescription)", tone: .bad)
             }
-
-        case .disconnect:
-            HubcapCredentialStore.remove()
-            updateAPIStatus()
-            allGames.removeAll()
-            games.removeAll()
-            totalCount = 0
-            loadedOffset = 0
-            tableView.reloadData()
-            updateEmptyState()
-            loadMoreButton.isEnabled = false
-            resultCountLabel.stringValue = "Ready to connect"
-            setStatus("Hubcap disconnected.", tone: .neutral)
 
         case .cancel:
             break
@@ -419,6 +410,41 @@ final class HubcapViewController: NSViewController {
             throw HubcapClientError.invalidAPIKey
         }
         return key
+    }
+
+    private func connectHubcap(rawKey: String) {
+        guard !isBusy else { return }
+
+        let key: String
+        do {
+            key = try validateHubcapKey(rawKey)
+        } catch {
+            setStatus(error.localizedDescription, tone: .bad)
+            return
+        }
+
+        setBusy(true, status: "Validating Hubcap API key…")
+
+        Task {
+            do {
+                _ = try await client.userStats(apiKey: key)
+                try HubcapCredentialStore.save(key)
+
+                updateAPIStatus()
+                allGames.removeAll()
+                games.removeAll()
+                totalCount = 0
+                loadedOffset = 0
+                tableView.reloadData()
+                updateEmptyState()
+
+                setBusy(false)
+                loadLibrary(reset: true)
+            } catch {
+                setBusy(false)
+                setStatus(error.localizedDescription, tone: .bad)
+            }
+        }
     }
 
     // MARK: Search / filtering
@@ -562,10 +588,10 @@ final class HubcapViewController: NSViewController {
                 "Showing \(allGames.count) of \(totalCount) games. Load 100 more to continue.",
                 tone: .ok
             )
-            resultCountLabel.stringValue = "(games.count) shown"
+            resultCountLabel.stringValue = "\(games.count) shown"
         } else {
-            setStatus("Showing all (allGames.count) Hubcap games.", tone: .ok)
-            resultCountLabel.stringValue = "(games.count) shown"
+            setStatus("Showing all \(allGames.count) Hubcap games.", tone: .ok)
+            resultCountLabel.stringValue = "\(games.count) shown"
         }
 
         loadMoreButton.isEnabled =
