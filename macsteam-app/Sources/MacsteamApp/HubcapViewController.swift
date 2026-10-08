@@ -16,7 +16,6 @@ final class HubcapViewController: NSViewController {
     private var apiStatusLabel: NSTextField!
 
     private var searchField: NSSearchField!
-    private var scopeControl: NSSegmentedControl!
     private var refreshButton: NSButton!
     private var loadMoreButton: NSButton!
     private var tableView: NSTableView!
@@ -98,7 +97,7 @@ final class HubcapViewController: NSViewController {
 
         // MARK: API access
 
-        let apiHeader = settingsGroupLabel("Connection")
+        let apiHeader = settingsGroupLabel("Connect to Hubcap")
 
         apiStatusLabel = NSTextField(labelWithString: "")
         apiStatusLabel.font = Typography.caption
@@ -107,23 +106,23 @@ final class HubcapViewController: NSViewController {
         apiStatusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         apiKeysButton = makeButton(
-            title: "Get API Key",
+            title: "Get a key",
             target: self,
             action: #selector(openAPIKeys)
         )
         apiKeysButton.controlSize = .small
 
         apiKeyField = NSSecureTextField()
-        apiKeyField.placeholderString = "Paste your smm_ API key"
+        apiKeyField.placeholderString = "Paste your Hubcap access key"
         apiKeyField.translatesAutoresizingMaskIntoConstraints = false
         apiKeyField.setAccessibilityLabel("Hubcap API key")
         apiKeyField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         apiKeyField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        saveKeyButton = makeButton(title: "Save", target: self, action: #selector(saveKey))
+        saveKeyButton = makeButton(title: "Connect", target: self, action: #selector(saveKey))
         saveKeyButton.controlSize = .small
 
-        forgetKeyButton = makeButton(title: "Forget", target: self, action: #selector(forgetKey))
+        forgetKeyButton = makeButton(title: "Disconnect", target: self, action: #selector(forgetKey))
         forgetKeyButton.controlSize = .small
 
         let keyButtons = NSStackView(views: [apiKeysButton, saveKeyButton, forgetKeyButton])
@@ -132,14 +131,32 @@ final class HubcapViewController: NSViewController {
         keyButtons.spacing = 6
         keyButtons.translatesAutoresizingMaskIntoConstraints = false
 
-        let apiTop = NSStackView(views: [apiStatusLabel, apiKeysButton])
+        let apiIntro = NSTextField(
+            labelWithString: "Hubcap needs an access key so macSteam can browse its library and download manifests."
+        )
+        apiIntro.font = Typography.body
+        apiIntro.textColor = .labelColor
+        apiIntro.lineBreakMode = .byWordWrapping
+        apiIntro.maximumNumberOfLines = 2
+        apiIntro.translatesAutoresizingMaskIntoConstraints = false
+        apiIntro.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let apiTop = NSStackView(views: [apiIntro, apiKeysButton])
         apiTop.orientation = .horizontal
         apiTop.alignment = .centerY
         apiTop.spacing = 8
         apiTop.translatesAutoresizingMaskIntoConstraints = false
         apiStatusLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        let apiBottom = NSStackView(views: [apiKeyField, keyButtons])
+        let apiStatusAndKey = NSStackView(views: [apiStatusLabel, apiKeyField])
+        apiStatusAndKey.orientation = .horizontal
+        apiStatusAndKey.alignment = .centerY
+        apiStatusAndKey.spacing = 8
+        apiStatusAndKey.translatesAutoresizingMaskIntoConstraints = false
+        apiStatusLabel.setContentHuggingPriority(.required, for: .horizontal)
+        apiStatusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let apiBottom = NSStackView(views: [apiStatusAndKey, keyButtons])
         apiBottom.orientation = .horizontal
         apiBottom.alignment = .centerY
         apiBottom.spacing = 8
@@ -176,16 +193,6 @@ final class HubcapViewController: NSViewController {
         searchField.controlSize = .large
         searchField.font = .systemFont(ofSize: 15)
 
-        scopeControl = NSSegmentedControl(
-            labels: ["All", "Installed"],
-            trackingMode: .selectOne,
-            target: self,
-            action: #selector(scopeChanged)
-        )
-        scopeControl.selectedSegment = 0
-        scopeControl.controlSize = .large
-        scopeControl.setAccessibilityLabel("Hubcap game filter")
-
         refreshButton = NSButton(
             image: NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "Refresh")!,
             target: self,
@@ -197,7 +204,7 @@ final class HubcapViewController: NSViewController {
         refreshButton.setAccessibilityLabel("Refresh Hubcap library")
         refreshButton.translatesAutoresizingMaskIntoConstraints = false
 
-        let searchBar = NSStackView(views: [searchField, scopeControl, refreshButton])
+        let searchBar = NSStackView(views: [searchField, refreshButton])
         searchBar.orientation = .horizontal
         searchBar.alignment = .centerY
         searchBar.spacing = 8
@@ -338,7 +345,6 @@ final class HubcapViewController: NSViewController {
             listCard.heightAnchor.constraint(greaterThanOrEqualToConstant: 320),
             footer.widthAnchor.constraint(equalTo: stack.widthAnchor),
 
-            scopeControl.widthAnchor.constraint(equalToConstant: 140),
             refreshButton.widthAnchor.constraint(equalToConstant: 34),
             refreshButton.heightAnchor.constraint(equalToConstant: 34),
         ])
@@ -432,18 +438,6 @@ final class HubcapViewController: NSViewController {
         scheduleSearch()
     }
 
-    @objc private func scopeChanged() {
-        searchTask?.cancel()
-        applyScopeAndReload()
-
-        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !query.isEmpty {
-            scheduleSearch()
-        } else {
-            updateCatalogStatus()
-        }
-    }
-
     @objc private func refreshLibrary() {
         guard !isBusy else { return }
         searchTask?.cancel()
@@ -455,7 +449,6 @@ final class HubcapViewController: NSViewController {
         guard searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
-        guard scopeControl.selectedSegment == 0 else { return }
         loadLibrary(reset: false)
     }
 
@@ -469,7 +462,14 @@ final class HubcapViewController: NSViewController {
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if query.isEmpty {
-            applyScopeAndReload()
+            games = allGames
+            tableView.reloadData()
+            emptyState.configure(
+                symbol: "books.vertical",
+                prompt: "Browse the Hubcap library",
+                hint: "Search for a game or scroll through the catalog."
+            )
+            updateEmptyState()
             updateCatalogStatus()
             return
         }
@@ -508,25 +508,17 @@ final class HubcapViewController: NSViewController {
                 )
                 if Task.isCancelled { return }
 
-                let scoped = scopeControl.selectedSegment == 1
-                    ? results.filter { isInstalled($0) }
-                    : results
-
-                games = deduplicateAndSort(scoped)
+                games = deduplicateAndSort(results)
                 tableView.reloadData()
                 resultCountLabel.stringValue = resultSummary(count: games.count, search: query)
                 emptyState.configure(
-                    symbol: scopeControl.selectedSegment == 1 ? "checkmark.circle" : "magnifyingglass",
-                    prompt: scopeControl.selectedSegment == 1
-                        ? "No installed matches"
-                        : "No games found",
-                    hint: scopeControl.selectedSegment == 1
-                        ? "Try All or install a game from the library."
-                        : "Try a different title or App ID."
+                    symbol: "magnifyingglass",
+                    prompt: "No games found",
+                    hint: "Try a different title or App ID."
                 )
                 emptyState.isHidden = !games.isEmpty
                 setBusy(false)
-                setStatus(
+                    setStatus(
                     games.isEmpty ? "No Hubcap games matched that search." : "(games.count) result(s) from Hubcap.",
                     tone: games.isEmpty ? .neutral : .ok
                 )
@@ -539,27 +531,18 @@ final class HubcapViewController: NSViewController {
         }
     }
 
-    private func applyScopeAndReload() {
-        if scopeControl.selectedSegment == 1 {
-            games = allGames.filter { isInstalled($0) }
-        } else {
-            games = allGames
-        }
-
-        games = deduplicateAndSort(games)
+    private func applyLibraryRows() {
+        games = deduplicateAndSort(allGames)
         tableView.reloadData()
         resultCountLabel.stringValue = games.isEmpty ? "No games" : "(games.count) shown"
         emptyState.configure(
-            symbol: scopeControl.selectedSegment == 1 ? "checkmark.circle" : "magnifyingglass",
-            prompt: scopeControl.selectedSegment == 1 ? "No installed games here" : "No games returned",
-            hint: scopeControl.selectedSegment == 1
-                ? "Installed games will appear here."
-                : "Try a different search."
+            symbol: "books.vertical",
+            prompt: "Browse the Hubcap library",
+            hint: "Search for a game or scroll through the catalog."
         )
         updateEmptyState()
         loadMoreButton.isEnabled =
             !isBusy &&
-            scopeControl.selectedSegment == 0 &&
             searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             loadedOffset < totalCount
     }
@@ -585,7 +568,7 @@ final class HubcapViewController: NSViewController {
                 totalCount = page.totalCount
 
                 updateInstalledMetric()
-                applyScopeAndReload()
+                applyLibraryRows()
                 updateCatalogStatus()
                 setBusy(false)
             } catch {
@@ -711,7 +694,7 @@ final class HubcapViewController: NSViewController {
 
     private func refreshInstalledState() {
         updateInstalledMetric()
-        applyScopeAndReload()
+        tableView.reloadData()
     }
 
     private func updateInstalledMetric() {
@@ -722,8 +705,8 @@ final class HubcapViewController: NSViewController {
     private func updateAPIStatus() {
         let hasKey = !(apiKeyField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
         apiStatusLabel?.stringValue = hasKey
-            ? "●  Connected — key stored securely in Keychain"
-            : "○  Not connected — add your Hubcap API key to browse"
+            ? "Connected securely"
+            : "Not connected"
         apiStatusLabel?.textColor = hasKey ? .systemGreen : Colors.secondaryText
         apiKeysButton?.title = hasKey ? "API Keys" : "Get API Key"
     }
@@ -788,7 +771,6 @@ final class HubcapViewController: NSViewController {
 
         loadMoreButton.isEnabled =
             !busy &&
-            scopeControl.selectedSegment == 0 &&
             searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             loadedOffset < totalCount
 
