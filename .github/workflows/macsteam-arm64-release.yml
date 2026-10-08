@@ -1,6 +1,7 @@
 name: macSteam arm64 Release Build
 
 on:
+  pull_request:
   workflow_dispatch:
     inputs:
       publish_release:
