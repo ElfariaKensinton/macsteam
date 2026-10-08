@@ -1056,9 +1056,9 @@ private final class HubcapSettingsDialogController: NSObject {
     private let openAPIKeys: () -> Void
     private let keyField = NSSecureTextField()
     private let alert = NSAlert()
-    private let connectButton: NSButton
-    private let disconnectButton: NSButton
-    private let cancelButton: NSButton
+    private var connectButton: NSButton!
+    private var disconnectButton: NSButton!
+    private var cancelButton: NSButton!
 
     init(apiKey: String?, openAPIKeys: @escaping () -> Void) {
         self.openAPIKeys = openAPIKeys
