@@ -1056,6 +1056,9 @@ private final class HubcapSettingsDialogController: NSObject {
     private let openAPIKeys: () -> Void
     private let keyField = NSSecureTextField()
     private let alert = NSAlert()
+    private let connectButton: NSButton
+    private let disconnectButton: NSButton
+    private let cancelButton: NSButton
 
     init(apiKey: String?, openAPIKeys: @escaping () -> Void) {
         self.openAPIKeys = openAPIKeys
@@ -1110,45 +1113,48 @@ private final class HubcapSettingsDialogController: NSObject {
 
         alert.accessoryView = accessory
 
-        // Keep native NSAlert buttons unchanged; only place their existing frames explicitly.
-        let connectButton = alert.addButton(withTitle: "Connect")
-        let disconnectButton = alert.addButton(withTitle: "Disconnect")
-        let cancelButton = alert.addButton(withTitle: "Cancel")
+        connectButton = alert.addButton(withTitle: "Connect")
+        disconnectButton = alert.addButton(withTitle: "Disconnect")
+        cancelButton = alert.addButton(withTitle: "Cancel")
 
         disconnectButton.isEnabled = apiKey != nil && !(apiKey?.isEmpty ?? true)
-
-        alert.layout()
-
-        let contentView = alert.window.contentView!
-        let visualButtons = [connectButton, disconnectButton, cancelButton]
-        let gap: CGFloat = 8
-        let rightInset: CGFloat = 20
-        let baselineY = connectButton.frame.minY
-        var rightEdge = contentView.bounds.width - rightInset
-
-        // NSAlert normally manages this row itself. Re-position the existing buttons only,
-        // keeping AppKit's native sizes, fonts, colors, and bezel styles intact.
-        for button in visualButtons.reversed() {
-            var frame = button.frame
-            frame.origin.x = rightEdge - frame.width
-            frame.origin.y = baselineY
-            button.frame = frame
-            rightEdge = frame.minX - gap
-        }
-
         connectButton.keyEquivalent = "\r"
     }
 
     func run() -> Result {
         alert.window.initialFirstResponder = keyField
 
+        // Let NSAlert finish its native layout, then move only the existing native
+        // response buttons as a group. Their native size, font, tint and bezel style
+        // are untouched.
+        alert.layout()
+        alert.window.contentView?.layoutSubtreeIfNeeded()
+
+        if let contentView = alert.window.contentView {
+            let buttons = [connectButton, disconnectButton, cancelButton]
+            let gap: CGFloat = 8
+            let rightInset: CGFloat = 20
+            let baselineY = buttons.map(\.frame.minY).min() ?? 0
+            var rightEdge = contentView.bounds.width - rightInset
+
+            // Visual order is Connect | Disconnect | Cancel while pinning the group
+            // to the trailing edge of the alert content area.
+            for button in buttons.reversed() {
+                var frame = button.frame
+                frame.origin.x = rightEdge - frame.width
+                frame.origin.y = baselineY
+                button.frame = frame
+                rightEdge = frame.minX - gap
+            }
+        }
+
         switch alert.runModal() {
         case .alertFirstButtonReturn:
-            return .cancel
+            return .connect(keyField.stringValue)
         case .alertSecondButtonReturn:
             return .disconnect
         case .alertThirdButtonReturn:
-            return .connect(keyField.stringValue)
+            return .cancel
         default:
             return .cancel
         }
