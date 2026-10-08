@@ -133,15 +133,6 @@ struct HubcapUserStats: Decodable, Sendable {
     }
 }
 
-struct HubcapUsage: Decodable, Sendable {
-    struct Single: Decodable, Sendable {
-        let usage: Int
-        let limit: Int
-    }
-
-    let single: Single
-}
-
 enum HubcapClientError: LocalizedError {
     case invalidAPIKey
     case invalidSearch
@@ -282,25 +273,6 @@ final class HubcapClient: @unchecked Sendable {
         } catch {
             throw HubcapClientError.invalidResponse(
                 endpoint: "/api/v1/user/stats",
-                preview: responsePreview(data)
-            )
-        }
-    }
-
-    func usage(apiKey: String) async throws -> HubcapUsage {
-        let request = try makeRequest(
-            url: baseURL.appendingPathComponent("/api/v1/generate/usage"),
-            apiKey: apiKey,
-            accept: "application/json"
-        )
-        let (data, response) = try await session.data(for: request)
-        try validate(response)
-
-        do {
-            return try JSONDecoder().decode(HubcapUsage.self, from: data)
-        } catch {
-            throw HubcapClientError.invalidResponse(
-                endpoint: "/api/v1/generate/usage",
                 preview: responsePreview(data)
             )
         }
