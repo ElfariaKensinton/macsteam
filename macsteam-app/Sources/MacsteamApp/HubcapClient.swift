@@ -5,11 +5,34 @@ struct HubcapGame: Codable, Identifiable, Sendable {
     let name: String
 
     var appID: Int? { Int(id) }
+
+    init(id: String, name: String) {
+        self.id = id
+        self.name = name
+    }
 }
 
 struct HubcapLibraryPage: Sendable {
     let totalCount: Int
     let games: [HubcapGame]
+}
+
+private struct HubcapLibraryGame: Decodable {
+    let gameID: String
+    let gameName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case gameID = "game_id"
+        case gameName = "game_name"
+    }
+
+    var model: HubcapGame {
+        let trimmed = gameName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return HubcapGame(
+            id: gameID,
+            name: (trimmed?.isEmpty == false) ? trimmed! : "App (gameID)"
+        )
+    }
 }
 
 private struct HubcapLibraryResponse: Decodable {
@@ -19,7 +42,7 @@ private struct HubcapLibraryResponse: Decodable {
     let offset: Int
     let search: String?
     let sortBy: String?
-    let games: [HubcapGame]
+    let games: [HubcapLibraryGame]
 
     enum CodingKeys: String, CodingKey {
         case status
@@ -29,13 +52,6 @@ private struct HubcapLibraryResponse: Decodable {
         case search
         case sortBy = "sort_by"
         case games
-    }
-}
-
-extension HubcapGame {
-    enum CodingKeys: String, CodingKey {
-        case id = "game_id"
-        case name = "game_name"
     }
 }
 
@@ -202,7 +218,7 @@ final class HubcapClient: @unchecked Sendable {
 
             return HubcapLibraryPage(
                 totalCount: payload.totalCount,
-                games: payload.games
+                games: payload.games.map(\.model)
             )
         } catch let error as HubcapClientError {
             throw error
