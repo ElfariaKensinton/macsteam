@@ -134,6 +134,7 @@ final class HubcapClient: @unchecked Sendable {
         request.httpMethod = "GET"
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.setValue(accept, forHTTPHeaderField: "Accept")
+        request.setValue("macSteam Hubcap Client", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 60
         return request
     }
