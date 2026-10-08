@@ -359,58 +359,21 @@ final class HubcapViewController: NSViewController {
     // MARK: Hubcap settings
 
     @objc private func openHubcapSettings() {
-        let alert = NSAlert()
-        alert.messageText = "Hubcap API"
-        
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 390, height: 30))
-
-        let keyField = NSSecureTextField()
-        keyField.placeholderString = "Paste API key"
-        keyField.stringValue = HubcapCredentialStore.apiKey ?? ""
-        keyField.translatesAutoresizingMaskIntoConstraints = false
-        keyField.setAccessibilityLabel("Hubcap API key")
-
-        let openURLButton = NSButton(
-            title: "Get API key",
-            target: self,
-            action: #selector(openAPIKeys)
+        let controller = HubcapSettingsWindowController(
+            apiKey: HubcapCredentialStore.apiKey,
+            openAPIKeys: { [weak self] in
+                self?.openAPIKeys()
+            }
         )
-        openURLButton.bezelStyle = .rounded
-        openURLButton.controlSize = .small
-        openURLButton.translatesAutoresizingMaskIntoConstraints = false
-        styleSecondaryButton(openURLButton)
 
-        container.addSubview(keyField)
-        container.addSubview(openURLButton)
+        guard let window = controller.window else { return }
 
-        NSLayoutConstraint.activate([
-            keyField.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            keyField.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            keyField.heightAnchor.constraint(equalToConstant: 28),
-            keyField.trailingAnchor.constraint(equalTo: openURLButton.leadingAnchor, constant: -8),
+        NSApp.runModal(for: window)
 
-            openURLButton.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            openURLButton.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            openURLButton.heightAnchor.constraint(equalToConstant: 24),
-            openURLButton.widthAnchor.constraint(equalToConstant: 104),
-        ])
-
-        alert.accessoryView = container
-
-        let connectButton = alert.addButton(withTitle: "Connect")
-        let disconnectButton = alert.addButton(withTitle: "Disconnect")
-        let cancelButton = alert.addButton(withTitle: "Cancel")
-
-        styleAlertButton(connectButton, width: 78, role: .primary)
-        styleAlertButton(disconnectButton, width: 94, role: .destructive)
-        styleAlertButton(cancelButton, width: 72, role: .secondary)
-
-        alert.window.initialFirstResponder = keyField
-
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
+        switch controller.result {
+        case .connect(let key):
             do {
-                let key = try validateHubcapKey(keyField.stringValue)
+                let key = try validateHubcapKey(key)
                 HubcapCredentialStore.save(key)
                 updateAPIStatus()
                 allGames.removeAll()
@@ -424,7 +387,7 @@ final class HubcapViewController: NSViewController {
                 setStatus(error.localizedDescription, tone: .bad)
             }
 
-        case .alertSecondButtonReturn:
+        case .disconnect:
             HubcapCredentialStore.remove()
             updateAPIStatus()
             allGames.removeAll()
@@ -437,7 +400,7 @@ final class HubcapViewController: NSViewController {
             resultCountLabel.stringValue = "Ready to connect"
             setStatus("Hubcap disconnected.", tone: .neutral)
 
-        default:
+        case .cancel, .none:
             break
         }
     }
@@ -738,45 +701,32 @@ final class HubcapViewController: NSViewController {
         return card
     }
 
-    private enum AlertButtonRole {
+    private enum ButtonRole {
         case primary
         case secondary
         case destructive
     }
 
-    private func styleAlertButton(_ button: NSButton, width: CGFloat, role: AlertButtonRole) {
+    private func styleButton(_ button: NSButton, role: ButtonRole = .secondary) {
         button.bezelStyle = .rounded
-        button.controlSize = .small
+        button.controlSize = .regular
         button.font = .systemFont(ofSize: 13, weight: role == .primary ? .semibold : .medium)
         button.alignment = .center
-        button.frame.size.width = width
-
-        switch role {
-        case .primary:
-            button.contentTintColor = .controlAccentColor
-        case .secondary:
-            button.contentTintColor = .labelColor
-        case .destructive:
-            button.contentTintColor = .systemRed
-        }
+        button.contentTintColor = role == .destructive ? .systemRed : .labelColor
     }
 
     private func stylePrimaryButton(_ button: NSButton) {
-        button.bezelStyle = .rounded
-        button.font = .systemFont(ofSize: 13, weight: .semibold)
+        styleButton(button, role: .primary)
         button.contentTintColor = .controlAccentColor
-        button.alignment = .center
     }
 
     private func styleSecondaryButton(_ button: NSButton) {
-        button.bezelStyle = .rounded
-        button.font = .systemFont(ofSize: 13, weight: .medium)
-        button.contentTintColor = .labelColor
-        button.alignment = .center
+        styleButton(button, role: .secondary)
     }
 
     private func styleIconButton(_ button: NSButton) {
         button.bezelStyle = .rounded
+        button.controlSize = .regular
         button.contentTintColor = .secondaryLabelColor
         button.imageScaling = .scaleProportionallyDown
     }
