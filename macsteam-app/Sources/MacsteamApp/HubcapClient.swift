@@ -87,6 +87,34 @@ enum HubcapClientError: LocalizedError {
     }
 }
 
+private struct HubcapSearchGame: Decodable {
+    let gameID: String
+    let gameName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case gameID = "game_id"
+        case gameName = "game_name"
+    }
+
+    var model: HubcapGame {
+        let trimmed = gameName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return HubcapGame(
+            id: gameID,
+            name: (trimmed?.isEmpty == false) ? trimmed! : "App \(gameID)"
+        )
+    }
+}
+
+private struct HubcapSearchResponse: Decodable {
+    let status: String
+    let results: [HubcapSearchGame]
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case results
+    }
+}
+
 final class HubcapClient: @unchecked Sendable {
     static let apiKeysURL = URL(string: "https://hubcapmanifest.com/api-keys/")!
 
@@ -146,6 +174,55 @@ final class HubcapClient: @unchecked Sendable {
         try validate(response)
         return try decodeLibraryPage(data)
     }
+
+    func searchGames(query: String, apiKey: String, appID: Bool = false) async throws -> [HubcapGame] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 3 else {
+            throw HubcapClientError.invalidSearch
+        }
+
+        var components = URLComponents(
+            url: baseURL.appendingPathComponent("/api/v1/search"),
+            resolvingAgainstBaseURL: false
+        )!
+        components.queryItems = [
+            URLQueryItem(name: "q", value: trimmed),
+            URLQueryItem(name: "limit", value: "100"),
+            URLQueryItem(name: "appid", value: appID ? "true" : "false"),
+        ]
+
+        let request = try makeRequest(
+            url: components.url!,
+            apiKey: apiKey,
+            accept: "application/json"
+        )
+        let (data, response) = try await session.data(for: request)
+        try validate(response)
+
+        var bytes = data
+        if bytes.starts(with: [0xEF, 0xBB, 0xBF]) {
+            bytes.removeFirst(3)
+        }
+
+        do {
+            let payload = try JSONDecoder().decode(HubcapSearchResponse.self, from: bytes)
+            guard payload.status == "success" else {
+                throw HubcapClientError.invalidResponse(
+                    endpoint: "/api/v1/search",
+                    preview: responsePreview(data)
+                )
+            }
+            return payload.results.map(\.model)
+        } catch let error as HubcapClientError {
+            throw error
+        } catch {
+            throw HubcapClientError.invalidResponse(
+                endpoint: "/api/v1/search",
+                preview: responsePreview(data)
+            )
+        }
+    }
+
 
     func downloadLuaText(appID: Int, apiKey: String) async throws -> String {
         let request = try makeRequest(
