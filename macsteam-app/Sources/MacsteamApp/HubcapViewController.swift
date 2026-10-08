@@ -809,8 +809,6 @@ final class HubcapViewController: NSViewController {
 
     // MARK: Helpers
 
-    private var isUpdatingCache = false
-
     private func currentKey() -> String? {
         guard let key = HubcapCredentialStore.apiKey else {
             setStatus("Open Hubcap Settings to add your access key.", tone: .neutral)
