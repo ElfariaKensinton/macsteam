@@ -1110,19 +1110,33 @@ private final class HubcapSettingsDialogController: NSObject {
 
         alert.accessoryView = accessory
 
-        // NSAlert automatically adds an OK button if no response buttons are provided.
-        // Add exactly the three actions this dialog needs; AppKit keeps them together at bottom-right.
-        // NSAlert displays buttons right-to-left: index 0 is the rightmost/default button.
-        // Add them in reverse visual order so the row reads Connect, Disconnect, Cancel.
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Disconnect")
-        alert.addButton(withTitle: "Connect")
+        // Keep native NSAlert buttons unchanged; only place their existing frames explicitly.
+        let connectButton = alert.addButton(withTitle: "Connect")
+        let disconnectButton = alert.addButton(withTitle: "Disconnect")
+        let cancelButton = alert.addButton(withTitle: "Cancel")
 
-        alert.buttons[0].keyEquivalent = "\u{1b}"
-        alert.buttons[1].isEnabled = apiKey != nil && !(apiKey?.isEmpty ?? true)
-        alert.buttons[2].keyEquivalent = "\r"
+        disconnectButton.isEnabled = apiKey != nil && !(apiKey?.isEmpty ?? true)
 
         alert.layout()
+
+        let contentView = alert.window.contentView!
+        let visualButtons = [connectButton, disconnectButton, cancelButton]
+        let gap: CGFloat = 8
+        let rightInset: CGFloat = 20
+        let baselineY = connectButton.frame.minY
+        var rightEdge = contentView.bounds.width - rightInset
+
+        // NSAlert normally manages this row itself. Re-position the existing buttons only,
+        // keeping AppKit's native sizes, fonts, colors, and bezel styles intact.
+        for button in visualButtons.reversed() {
+            var frame = button.frame
+            frame.origin.x = rightEdge - frame.width
+            frame.origin.y = baselineY
+            button.frame = frame
+            rightEdge = frame.minX - gap
+        }
+
+        connectButton.keyEquivalent = "\r"
     }
 
     func run() -> Result {
