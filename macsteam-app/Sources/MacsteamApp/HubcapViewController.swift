@@ -851,7 +851,6 @@ private final class HubcapGameCell: NSTableCellView {
     private let installedLabel = NSTextField(labelWithString: "Installed")
 
     private var imageTask: Task<Void, Never>?
-    private var nameTask: Task<Void, Never>?
     private var representedID = ""
 
     var onInstall: (() -> Void)?
@@ -964,7 +963,6 @@ private final class HubcapGameCell: NSTableCellView {
     override func prepareForReuse() {
         super.prepareForReuse()
         imageTask?.cancel()
-        nameTask?.cancel()
         representedID = ""
         isInstalled = false
         actionButton.isHidden = false
@@ -974,7 +972,6 @@ private final class HubcapGameCell: NSTableCellView {
 
     func configure(game: HubcapGame) {
         imageTask?.cancel()
-        nameTask?.cancel()
         representedID = game.id
 
         nameLabel.stringValue = game.name
