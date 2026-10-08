@@ -329,11 +329,6 @@ final class HubcapViewController: NSViewController {
         updateInstalledMetric()
         updateAPIStatus()
 
-        guard HubcapCredentialStore.apiKey != nil else {
-            setStatus("Connect Hubcap in Settings to start browsing.", tone: .neutral)
-            return
-        }
-
         loadCachedLibraryThenStart()
     }
 
@@ -580,7 +575,9 @@ final class HubcapViewController: NSViewController {
                 loadLibrary(reset: true)
             }
 
-            refreshLibraryDatabaseInBackground()
+            if HubcapCredentialStore.apiKey != nil {
+                refreshLibraryDatabaseInBackground()
+            }
         }
     }
 
