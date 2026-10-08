@@ -1119,9 +1119,19 @@ private final class HubcapSettingsDialogController: NSObject {
         alert.addButton(withTitle: "Disconnect")
         alert.addButton(withTitle: "Connect")
 
-        alert.buttons[0].keyEquivalent = "\u{1b}"
-        alert.buttons[2].keyEquivalent = "\r"
-        alert.buttons[1].isEnabled = apiKey != nil && !(apiKey?.isEmpty ?? true)
+        let buttons = alert.buttons
+        buttons[0].keyEquivalent = "\u{1b}"
+        buttons[2].keyEquivalent = "\r"
+        buttons[1].isEnabled = apiKey != nil && !(apiKey?.isEmpty ?? true)
+
+        // Keep the native alert button row compact and right-aligned.
+        let widths: [CGFloat] = [68, 92, 76]
+        for (button, width) in zip(buttons, widths) {
+            button.controlSize = .small
+            button.setContentHuggingPriority(.required, for: .horizontal)
+            button.setContentCompressionResistancePriority(.required, for: .horizontal)
+            button.widthAnchor.constraint(equalToConstant: width).isActive = true
+        }
     }
 
     func run() -> Result {
