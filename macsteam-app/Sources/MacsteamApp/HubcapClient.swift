@@ -26,7 +26,7 @@ enum HubcapClientError: LocalizedError {
     }
 }
 
-final class HubcapClient {
+final class HubcapClient: @unchecked Sendable {
     static let apiKeysURL = URL(string: "https://hubcapmanifest.com/api-keys/")!
 
     private let session: URLSession
