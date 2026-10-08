@@ -31,6 +31,8 @@ final class HubcapViewController: NSViewController {
     private var loadedOffset = 0
     private var isBusy = false
     private var searchTask: Task<Void, Never>?
+    private var isUpdatingCache = false
+    private var didStartCacheRefresh = false
 
     init(store: ConfigStore, onConfigChanged: @escaping () -> Void) {
         self.store = store
