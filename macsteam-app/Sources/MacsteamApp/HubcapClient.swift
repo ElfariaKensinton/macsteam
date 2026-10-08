@@ -19,7 +19,7 @@ enum HubcapClientError: LocalizedError {
     case rateLimited
     case unavailable
     case http(Int)
-    case invalidResponse(endpoint: String)
+    case invalidResponse(endpoint: String, preview: String)
     case invalidLuaResponse(appID: Int, preview: String)
 
     var errorDescription: String? {
@@ -36,8 +36,8 @@ enum HubcapClientError: LocalizedError {
             return "Hubcap doesn't have a Lua manifest for this game."
         case .http(let status):
             return "Hubcap returned HTTP \(status)."
-        case .invalidResponse(let endpoint):
-            return "Hubcap returned an unexpected response from \(endpoint)."
+        case .invalidResponse(let endpoint, let preview):
+            return "Hubcap returned an unexpected response from \(endpoint): \(preview)"
         case .invalidLuaResponse(let appID, let preview):
             return "Hubcap returned invalid Lua for App \(appID). Response starts with: \(preview)"
         }
@@ -55,33 +55,32 @@ final class HubcapClient: @unchecked Sendable {
     }
 
     func allGames(apiKey: String) async throws -> [HubcapGame] {
-        let request = try makeRequest(
-            url: baseURL.appendingPathComponent("/api/v1/games"),
-            apiKey: apiKey,
-            accept: "application/json"
-        )
-        let (data, response) = try await session.data(for: request)
-        try validate(response)
+        var offset = 0
+        var all: [HubcapGame] = []
 
-        let object = try JSONSerialization.jsonObject(with: data)
-        if let items = object as? [[String: Any]] {
-            return decodeGames(items)
+        while true {
+            let page = try await libraryPage(
+                apiKey: apiKey,
+                limit: 1000,
+                offset: offset
+            )
+            all.append(contentsOf: page.games)
+
+            if page.games.isEmpty || all.count >= page.totalCount {
+                break
+            }
+
+            let nextOffset = offset + page.games.count
+            guard nextOffset > offset else {
+                throw HubcapClientError.invalidResponse(
+                    endpoint: "/api/v1/library",
+                    preview: "pagination did not advance"
+                )
+            }
+            offset = nextOffset
         }
 
-        guard let root = object as? [String: Any] else {
-            throw HubcapClientError.invalidResponse(endpoint: "/api/v1/games")
-        }
-
-        let items =
-            (root["games"] as? [[String: Any]])
-            ?? (root["items"] as? [[String: Any]])
-            ?? (root["results"] as? [[String: Any]])
-
-        guard let items else {
-            throw HubcapClientError.invalidResponse(endpoint: "/api/v1/games")
-        }
-
-        return decodeGames(items)
+        return all
     }
 
     func libraryPage(apiKey: String, limit: Int = 1000, offset: Int = 0) async throws -> HubcapLibraryPage {
@@ -170,7 +169,10 @@ final class HubcapClient: @unchecked Sendable {
         }
 
         guard let root = object as? [String: Any] else {
-            throw HubcapClientError.invalidResponse(endpoint: "/api/v1/library")
+            throw HubcapClientError.invalidResponse(
+                endpoint: "/api/v1/library",
+                preview: responsePreview(data)
+            )
         }
 
         let payloads = candidateDictionaries(from: root)
@@ -188,11 +190,17 @@ final class HubcapClient: @unchecked Sendable {
                     )
                 }
 
-                throw HubcapClientError.invalidResponse(endpoint: "/api/v1/library")
+                throw HubcapClientError.invalidResponse(
+                    endpoint: "/api/v1/library",
+                    preview: responsePreview(data)
+                )
             }
         }
 
-        throw HubcapClientError.invalidResponse(endpoint: "/api/v1/library")
+        throw HubcapClientError.invalidResponse(
+            endpoint: "/api/v1/library",
+            preview: responsePreview(data)
+        )
     }
 
     private func candidateDictionaries(from root: [String: Any]) -> [[String: Any]] {
@@ -316,6 +324,22 @@ final class HubcapClient: @unchecked Sendable {
             }
         }
         return nil
+    }
+
+    private func jsonObject(from data: Data) throws -> Any {
+        var bytes = data
+        if bytes.starts(with: [0xEF, 0xBB, 0xBF]) {
+            bytes.removeFirst(3)
+        }
+        return try JSONSerialization.jsonObject(with: bytes)
+    }
+
+    private func responsePreview(_ data: Data) -> String {
+        let text = String(decoding: data.prefix(240), as: UTF8.self)
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? "<empty body>" : text
     }
 
     private func validate(_ response: URLResponse) throws {
