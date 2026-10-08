@@ -136,6 +136,7 @@ struct HubcapUserStats: Decodable, Sendable {
 struct HubcapUsage: Decodable, Sendable {
     struct Single: Decodable, Sendable {
         let usage: Int
+        let limit: Int
     }
 
     let single: Single
