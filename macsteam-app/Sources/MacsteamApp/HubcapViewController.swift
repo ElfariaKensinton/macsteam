@@ -7,13 +7,10 @@ final class HubcapViewController: NSViewController {
 
     // Keep all Hubcap API behavior in HubcapClient. This view only orchestrates UI state.
     private let client = HubcapClient()
-    private let keychainAccount = "hubcap-api-key"
-
-    private var apiKeyField: NSSecureTextField!
-    private var saveKeyButton: NSButton!
-    private var forgetKeyButton: NSButton!
-    private var apiKeysButton: NSButton!
-    private var apiStatusLabel: NSTextField!
+    private var apiStatusIcon: NSImageView!
+    private var apiStatusTitle: NSTextField!
+    private var apiStatusDetail: NSTextField!
+    private var apiSettingsButton: NSButton!
 
     private var searchField: NSSearchField!
     private var refreshButton: NSButton!
@@ -95,88 +92,56 @@ final class HubcapViewController: NSViewController {
         hero.setContentHuggingPriority(.defaultLow, for: .horizontal)
         hero.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        // MARK: API access
+
+        // MARK: Hubcap connection
 
         let apiHeader = settingsGroupLabel("Connect to Hubcap")
 
-        apiStatusLabel = NSTextField(labelWithString: "")
-        apiStatusLabel.font = Typography.caption
-        apiStatusLabel.textColor = Colors.secondaryText
-        apiStatusLabel.translatesAutoresizingMaskIntoConstraints = false
-        apiStatusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        apiStatusIcon = NSImageView()
+        apiStatusIcon.translatesAutoresizingMaskIntoConstraints = false
+        apiStatusIcon.setAccessibilityElement(false)
 
-        apiKeysButton = makeButton(
-            title: "Get a key",
+        apiStatusTitle = NSTextField(labelWithString: "Not connected")
+        apiStatusTitle.font = .systemFont(ofSize: 14, weight: .semibold)
+        apiStatusTitle.textColor = .labelColor
+        apiStatusTitle.translatesAutoresizingMaskIntoConstraints = false
+
+        apiStatusDetail = NSTextField(labelWithString: "Add an access key in Settings.")
+        apiStatusDetail.font = Typography.caption
+        apiStatusDetail.textColor = Colors.secondaryText
+        apiStatusDetail.translatesAutoresizingMaskIntoConstraints = false
+
+        let apiText = NSStackView(views: [apiStatusTitle, apiStatusDetail])
+        apiText.orientation = .vertical
+        apiText.alignment = .leading
+        apiText.spacing = 2
+        apiText.translatesAutoresizingMaskIntoConstraints = false
+        apiText.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        apiSettingsButton = makeButton(
+            title: "Settings",
             target: self,
-            action: #selector(openAPIKeys)
+            action: #selector(openHubcapSettings)
         )
-        apiKeysButton.controlSize = .small
 
-        apiKeyField = NSSecureTextField()
-        apiKeyField.placeholderString = "Paste your Hubcap access key"
-        apiKeyField.translatesAutoresizingMaskIntoConstraints = false
-        apiKeyField.setAccessibilityLabel("Hubcap API key")
-        apiKeyField.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        apiKeyField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        saveKeyButton = makeButton(title: "Connect", target: self, action: #selector(saveKey))
-        saveKeyButton.controlSize = .small
-
-        forgetKeyButton = makeButton(title: "Disconnect", target: self, action: #selector(forgetKey))
-        forgetKeyButton.controlSize = .small
-
-        let keyButtons = NSStackView(views: [apiKeysButton, saveKeyButton, forgetKeyButton])
-        keyButtons.orientation = .horizontal
-        keyButtons.alignment = .centerY
-        keyButtons.spacing = 6
-        keyButtons.translatesAutoresizingMaskIntoConstraints = false
-
-        let apiIntro = NSTextField(
-            labelWithString: "Hubcap needs an access key so macSteam can browse its library and download manifests."
-        )
-        apiIntro.font = Typography.body
-        apiIntro.textColor = .labelColor
-        apiIntro.lineBreakMode = .byWordWrapping
-        apiIntro.maximumNumberOfLines = 2
-        apiIntro.translatesAutoresizingMaskIntoConstraints = false
-        apiIntro.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        let apiTop = NSStackView(views: [apiIntro, apiKeysButton])
-        apiTop.orientation = .horizontal
-        apiTop.alignment = .centerY
-        apiTop.spacing = 8
-        apiTop.translatesAutoresizingMaskIntoConstraints = false
-        apiStatusLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-
-        let apiStatusAndKey = NSStackView(views: [apiStatusLabel, apiKeyField])
-        apiStatusAndKey.orientation = .horizontal
-        apiStatusAndKey.alignment = .centerY
-        apiStatusAndKey.spacing = 8
-        apiStatusAndKey.translatesAutoresizingMaskIntoConstraints = false
-        apiStatusLabel.setContentHuggingPriority(.required, for: .horizontal)
-        apiStatusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        let apiBottom = NSStackView(views: [apiStatusAndKey, keyButtons])
-        apiBottom.orientation = .horizontal
-        apiBottom.alignment = .centerY
-        apiBottom.spacing = 8
-        apiBottom.translatesAutoresizingMaskIntoConstraints = false
+        let apiContent = NSStackView(views: [apiStatusIcon, apiText, apiSettingsButton])
+        apiContent.orientation = .horizontal
+        apiContent.alignment = .centerY
+        apiContent.spacing = 10
+        apiContent.translatesAutoresizingMaskIntoConstraints = false
+        apiSettingsButton.setContentHuggingPriority(.required, for: .horizontal)
 
         let apiCard = makeCard()
-        apiCard.addSubview(apiTop)
-        apiCard.addSubview(apiBottom)
+        apiCard.addSubview(apiContent)
 
         NSLayoutConstraint.activate([
-            apiTop.topAnchor.constraint(equalTo: apiCard.topAnchor, constant: 12),
-            apiTop.leadingAnchor.constraint(equalTo: apiCard.leadingAnchor, constant: 14),
-            apiTop.trailingAnchor.constraint(equalTo: apiCard.trailingAnchor, constant: -14),
+            apiContent.topAnchor.constraint(equalTo: apiCard.topAnchor, constant: 14),
+            apiContent.leadingAnchor.constraint(equalTo: apiCard.leadingAnchor, constant: 14),
+            apiContent.trailingAnchor.constraint(equalTo: apiCard.trailingAnchor, constant: -14),
+            apiContent.bottomAnchor.constraint(equalTo: apiCard.bottomAnchor, constant: -14),
 
-            apiBottom.topAnchor.constraint(equalTo: apiTop.bottomAnchor, constant: 8),
-            apiBottom.leadingAnchor.constraint(equalTo: apiCard.leadingAnchor, constant: 14),
-            apiBottom.trailingAnchor.constraint(equalTo: apiCard.trailingAnchor, constant: -14),
-            apiBottom.bottomAnchor.constraint(equalTo: apiCard.bottomAnchor, constant: -12),
-
-            apiKeyField.heightAnchor.constraint(equalToConstant: 28),
+            apiStatusIcon.widthAnchor.constraint(equalToConstant: 12),
+            apiStatusIcon.heightAnchor.constraint(equalToConstant: 12),
         ])
 
         // MARK: Search
@@ -349,7 +314,6 @@ final class HubcapViewController: NSViewController {
             refreshButton.heightAnchor.constraint(equalToConstant: 34),
         ])
 
-        apiKeyField.stringValue = KeychainStore.read(account: keychainAccount) ?? ""
         updateInstalledMetric()
         updateAPIStatus()
         updateEmptyState()
@@ -359,10 +323,7 @@ final class HubcapViewController: NSViewController {
     override func viewDidAppear() {
         super.viewDidAppear()
 
-        let stored = KeychainStore.read(account: keychainAccount) ?? ""
-        if apiKeyField.stringValue != stored {
-            apiKeyField.stringValue = stored
-        }
+        let stored = HubcapCredentialStore.apiKey ?? ""
 
         updateInstalledMetric()
         updateAPIStatus()
@@ -381,56 +342,115 @@ final class HubcapViewController: NSViewController {
         }
     }
 
-    // MARK: API actions
+    // MARK: Hubcap settings
 
-    @objc private func openAPIKeys() {
-        NSWorkspace.shared.open(HubcapClient.apiKeysURL)
-    }
+    @objc private func openHubcapSettings() {
+        let alert = NSAlert()
+        alert.messageText = "Hubcap Settings"
+        alert.informativeText = "Enter your Hubcap access key once. macSteam will remember it for future launches."
 
-    @objc private func saveKey() {
-        guard !isBusy else { return }
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 440, height: 108))
 
-        let key: String
-        do {
-            key = try validatedKey()
-            try KeychainStore.write(key, account: keychainAccount)
-        } catch {
-            setStatus(error.localizedDescription, tone: .bad)
-            return
-        }
+        let keyLabel = NSTextField(labelWithString: "Access key")
+        keyLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        keyLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        apiKeyField.stringValue = key
-        allGames.removeAll()
-        games.removeAll()
-        totalCount = 0
-        loadedOffset = 0
-        tableView.reloadData()
-        updateInstalledMetric()
-        updateAPIStatus()
-        updateEmptyState()
-        loadLibrary(reset: true)
-    }
+        let keyField = NSSecureTextField()
+        keyField.placeholderString = "Paste your Hubcap access key"
+        keyField.stringValue = HubcapCredentialStore.apiKey ?? ""
+        keyField.translatesAutoresizingMaskIntoConstraints = false
+        keyField.setAccessibilityLabel("Hubcap access key")
 
-    @objc private func forgetKey() {
-        guard !isBusy else { return }
+        let urlLabel = NSTextField(labelWithString: "https://hubcapmanifest.com/api-keys/")
+        urlLabel.font = Typography.caption
+        urlLabel.textColor = Colors.secondaryText
+        urlLabel.translatesAutoresizingMaskIntoConstraints = false
+        urlLabel.lineBreakMode = .byTruncatingTail
 
-        do {
-            try KeychainStore.delete(account: keychainAccount)
-            apiKeyField.stringValue = ""
+        let openURLButton = NSButton(
+            title: "Open API key page",
+            target: self,
+            action: #selector(openAPIKeys)
+        )
+        openURLButton.bezelStyle = .rounded
+        openURLButton.controlSize = .small
+        openURLButton.translatesAutoresizingMaskIntoConstraints = false
+
+        container.addSubview(keyLabel)
+        container.addSubview(keyField)
+        container.addSubview(urlLabel)
+        container.addSubview(openURLButton)
+
+        NSLayoutConstraint.activate([
+            keyLabel.topAnchor.constraint(equalTo: container.topAnchor),
+            keyLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+
+            keyField.topAnchor.constraint(equalTo: keyLabel.bottomAnchor, constant: 7),
+            keyField.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            keyField.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            keyField.heightAnchor.constraint(equalToConstant: 28),
+
+            urlLabel.topAnchor.constraint(equalTo: keyField.bottomAnchor, constant: 8),
+            urlLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            urlLabel.trailingAnchor.constraint(lessThanOrEqualTo: openURLButton.leadingAnchor, constant: -10),
+
+            openURLButton.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            openURLButton.centerYAnchor.constraint(equalTo: urlLabel.centerYAnchor),
+        ])
+
+        alert.accessoryView = container
+        alert.addButton(withTitle: "Connect")
+        alert.addButton(withTitle: "Disconnect")
+        alert.addButton(withTitle: "Cancel")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            do {
+                let key = try validateHubcapKey(keyField.stringValue)
+                HubcapCredentialStore.save(key)
+                updateAPIStatus()
+                allGames.removeAll()
+                games.removeAll()
+                totalCount = 0
+                loadedOffset = 0
+                tableView.reloadData()
+                updateEmptyState()
+                loadLibrary(reset: true)
+            } catch {
+                setStatus(error.localizedDescription, tone: .bad)
+            }
+
+        case .alertSecondButtonReturn:
+            HubcapCredentialStore.remove()
+            updateAPIStatus()
             allGames.removeAll()
             games.removeAll()
             totalCount = 0
             loadedOffset = 0
             tableView.reloadData()
-            updateInstalledMetric()
-            updateAPIStatus()
             updateEmptyState()
             loadMoreButton.isEnabled = false
-            resultCountLabel.stringValue = "Ready to search"
-            setStatus("Hubcap API key removed.", tone: .neutral)
-        } catch {
-            setStatus(error.localizedDescription, tone: .bad)
+            resultCountLabel.stringValue = "Ready to connect"
+            setStatus("Hubcap disconnected.", tone: .neutral)
+
+        default:
+            break
         }
+    }
+
+    @objc private func openAPIKeys() {
+        NSWorkspace.shared.open(HubcapClient.apiKeysURL)
+    }
+
+    private func validateHubcapKey(_ raw: String) throws -> String {
+        let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard key.range(
+            of: #"^smm_[0-9a-f]{96}$"#,
+            options: .regularExpression
+        ) != nil else {
+            throw HubcapClientError.invalidAPIKey
+        }
+        return key
     }
 
     // MARK: Search / filtering
@@ -659,32 +679,19 @@ final class HubcapViewController: NSViewController {
     // MARK: Helpers
 
     private func currentKey() -> String? {
-        let key = apiKeyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else {
-            setStatus("Enter your Hubcap API key to browse the library.", tone: .neutral)
+        guard let key = HubcapCredentialStore.apiKey else {
+            setStatus("Open Hubcap Settings to add your access key.", tone: .neutral)
             return nil
         }
 
         do {
-            _ = try validatedKey()
-            return key
+            return try validateHubcapKey(key)
         } catch {
             if !isBusy {
                 setStatus(error.localizedDescription, tone: .bad)
             }
             return nil
         }
-    }
-
-    private func validatedKey() throws -> String {
-        let key = apiKeyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard key.range(
-            of: #"^smm_[0-9a-f]{96}$"#,
-            options: .regularExpression
-        ) != nil else {
-            throw HubcapClientError.invalidAPIKey
-        }
-        return key
     }
 
     private func isInstalled(_ game: HubcapGame) -> Bool {
@@ -703,12 +710,17 @@ final class HubcapViewController: NSViewController {
     }
 
     private func updateAPIStatus() {
-        let hasKey = !(apiKeyField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-        apiStatusLabel?.stringValue = hasKey
-            ? "Connected securely"
-            : "Not connected"
-        apiStatusLabel?.textColor = hasKey ? .systemGreen : Colors.secondaryText
-        apiKeysButton?.title = hasKey ? "API Keys" : "Get API Key"
+        let hasKey = HubcapCredentialStore.apiKey != nil
+        apiStatusIcon?.image = NSImage(
+            systemSymbolName: hasKey ? "circle.fill" : "circle",
+            accessibilityDescription: hasKey ? "Connected" : "Not connected"
+        )
+        apiStatusIcon?.symbolConfiguration = .init(pointSize: 10, weight: .semibold)
+        apiStatusIcon?.contentTintColor = hasKey ? .systemGreen : Colors.secondaryText
+        apiStatusTitle?.stringValue = hasKey ? "Connected" : "Not connected"
+        apiStatusDetail?.stringValue = hasKey
+            ? "Hubcap access is ready."
+            : "Add an access key in Settings."
     }
 
     private func resultSummary(count: Int, search: String) -> String {
@@ -752,9 +764,7 @@ final class HubcapViewController: NSViewController {
             spinner.stopAnimation(nil)
         }
 
-        apiKeysButton.isEnabled = !busy
-        saveKeyButton.isEnabled = !busy
-        forgetKeyButton.isEnabled = !busy
+        apiSettingsButton.isEnabled = !busy
         searchField.isEnabled = true
         refreshButton.isEnabled = !busy
         tableView.isEnabled = !busy
