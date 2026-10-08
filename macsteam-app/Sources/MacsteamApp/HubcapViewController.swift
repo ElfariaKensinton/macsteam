@@ -1059,6 +1059,7 @@ private final class HubcapSettingsDialogController: NSObject {
     private var connectButton: NSButton!
     private var disconnectButton: NSButton!
     private var cancelButton: NSButton!
+    private var accessoryView: NSView!
 
     init(apiKey: String?, openAPIKeys: @escaping () -> Void) {
         self.openAPIKeys = openAPIKeys
@@ -1072,6 +1073,9 @@ private final class HubcapSettingsDialogController: NSObject {
         keyField.placeholderString = "Hubcap API key"
         keyField.font = .systemFont(ofSize: 13)
         keyField.controlSize = .large
+        keyField.usesSingleLineMode = false
+        keyField.maximumNumberOfLines = 0
+        keyField.lineBreakMode = .byWordWrapping
         keyField.translatesAutoresizingMaskIntoConstraints = false
         keyField.setAccessibilityLabel("Hubcap API key")
 
@@ -1082,36 +1086,34 @@ private final class HubcapSettingsDialogController: NSObject {
         )
         getKeyButton.translatesAutoresizingMaskIntoConstraints = false
 
-        let keyRow = NSStackView(views: [keyField, getKeyButton])
-        keyRow.orientation = .horizontal
-        keyRow.alignment = .centerY
-        keyRow.spacing = 8
-        keyRow.translatesAutoresizingMaskIntoConstraints = false
-        keyField.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        keyField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
         let helper = NSTextField(labelWithString: "Stored locally by macSteam.")
         helper.font = .systemFont(ofSize: 11)
         helper.textColor = .secondaryLabelColor
         helper.translatesAutoresizingMaskIntoConstraints = false
 
-        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 66))
-        accessory.addSubview(keyRow)
-        accessory.addSubview(helper)
+        accessoryView = NSView(
+            frame: NSRect(x: 0, y: 0, width: 260, height: 128)
+        )
+        accessoryView.addSubview(keyField)
+        accessoryView.addSubview(helper)
+        accessoryView.addSubview(getKeyButton)
 
         NSLayoutConstraint.activate([
-            keyRow.topAnchor.constraint(equalTo: accessory.topAnchor),
-            keyRow.leadingAnchor.constraint(equalTo: accessory.leadingAnchor),
-            keyRow.trailingAnchor.constraint(equalTo: accessory.trailingAnchor),
-            keyRow.heightAnchor.constraint(equalToConstant: 32),
+            keyField.topAnchor.constraint(equalTo: accessoryView.topAnchor),
+            keyField.leadingAnchor.constraint(equalTo: accessoryView.leadingAnchor),
+            keyField.trailingAnchor.constraint(equalTo: accessoryView.trailingAnchor),
+            keyField.heightAnchor.constraint(equalToConstant: 72),
 
-            helper.topAnchor.constraint(equalTo: keyRow.bottomAnchor, constant: 8),
-            helper.leadingAnchor.constraint(equalTo: accessory.leadingAnchor),
-            helper.trailingAnchor.constraint(equalTo: accessory.trailingAnchor),
-            helper.bottomAnchor.constraint(equalTo: accessory.bottomAnchor),
+            helper.topAnchor.constraint(equalTo: keyField.bottomAnchor, constant: 8),
+            helper.leadingAnchor.constraint(equalTo: accessoryView.leadingAnchor),
+            helper.trailingAnchor.constraint(equalTo: accessoryView.trailingAnchor),
+
+            getKeyButton.topAnchor.constraint(equalTo: helper.bottomAnchor, constant: 8),
+            getKeyButton.leadingAnchor.constraint(equalTo: accessoryView.leadingAnchor),
+            getKeyButton.bottomAnchor.constraint(equalTo: accessoryView.bottomAnchor),
         ])
 
-        alert.accessoryView = accessory
+        alert.accessoryView = accessoryView
 
         // NSAlert places the first-added native button on the trailing edge.
         // Add in reverse visual order to get: Connect | Disconnect | Cancel.
@@ -1127,26 +1129,27 @@ private final class HubcapSettingsDialogController: NSObject {
         alert.window.initialFirstResponder = keyField
         alert.layout()
 
-        // Let NSAlert perform its native layout first. If the generated response
-        // row needs more room, widen the alert itself rather than touching any of
-        // AppKit's private subviews or changing the native buttons.
-        alert.layout()
+        // Keep the native NSAlert response buttons exactly as AppKit creates them.
+        // Match the multiline API input to the width of their response container.
+        var responseContainer: NSView? = connectButton
+        while let parent = responseContainer?.superview {
+            if parent is NSStackView {
+                responseContainer = parent
+                break
+            }
+            responseContainer = parent
+        }
 
-        let minimumResponseWidth =
-            connectButton.frame.width +
-            disconnectButton.frame.width +
-            cancelButton.frame.width +
-            16
+        let responseWidth = responseContainer?.bounds.width
+            ?? max(
+                connectButton.frame.width,
+                max(disconnectButton.frame.width, cancelButton.frame.width)
+            )
 
-        let minimumAlertWidth = max(
-            alert.window.frame.width,
-            minimumResponseWidth + 96
-        )
-
-        if alert.window.frame.width < minimumAlertWidth {
-            var frame = alert.window.frame
-            frame.size.width = minimumAlertWidth
-            alert.window.setFrame(frame, display: false)
+        if responseWidth > 0 {
+            var frame = accessoryView.frame
+            frame.size.width = responseWidth
+            accessoryView.frame = frame
             alert.layout()
         }
 
