@@ -1112,13 +1112,17 @@ private final class HubcapSettingsDialogController: NSObject {
 
         // NSAlert automatically adds an OK button if no response buttons are provided.
         // Add exactly the three actions this dialog needs; AppKit keeps them together at bottom-right.
-        alert.addButton(withTitle: "Connect")
-        alert.addButton(withTitle: "Disconnect")
+        // NSAlert displays buttons right-to-left: index 0 is the rightmost/default button.
+        // Add them in reverse visual order so the row reads Connect, Disconnect, Cancel.
         alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Disconnect")
+        alert.addButton(withTitle: "Connect")
 
-        alert.buttons[0].keyEquivalent = "\r"
+        alert.buttons[0].keyEquivalent = "\u{1b}"
         alert.buttons[1].isEnabled = apiKey != nil && !(apiKey?.isEmpty ?? true)
-        alert.buttons[2].keyEquivalent = "\u{1b}"
+        alert.buttons[2].keyEquivalent = "\r"
+
+        alert.layout()
     }
 
     func run() -> Result {
@@ -1126,11 +1130,11 @@ private final class HubcapSettingsDialogController: NSObject {
 
         switch alert.runModal() {
         case .alertFirstButtonReturn:
-            return .connect(keyField.stringValue)
+            return .cancel
         case .alertSecondButtonReturn:
             return .disconnect
         case .alertThirdButtonReturn:
-            return .cancel
+            return .connect(keyField.stringValue)
         default:
             return .cancel
         }
