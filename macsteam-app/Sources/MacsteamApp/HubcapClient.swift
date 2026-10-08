@@ -3,12 +3,24 @@ import Foundation
 struct HubcapGame: Codable, Identifiable, Sendable {
     let id: String
     let name: String
+    let appType: String?
+    let manifestAvailable: Bool
+    let headerImageURL: URL?
 
     var appID: Int? { Int(id) }
 
-    init(id: String, name: String) {
+    init(
+        id: String,
+        name: String,
+        appType: String? = nil,
+        manifestAvailable: Bool = true,
+        headerImageURL: URL? = nil
+    ) {
         self.id = id
         self.name = name
+        self.appType = appType
+        self.manifestAvailable = manifestAvailable
+        self.headerImageURL = headerImageURL
     }
 }
 
@@ -20,17 +32,26 @@ struct HubcapLibraryPage: Sendable {
 private struct HubcapLibraryGame: Decodable {
     let gameID: String
     let gameName: String?
+    let appType: String?
+    let manifestAvailable: Bool
+    let headerImage: String?
 
     enum CodingKeys: String, CodingKey {
         case gameID = "game_id"
         case gameName = "game_name"
+        case appType = "app_type"
+        case manifestAvailable = "manifest_available"
+        case headerImage = "header_image"
     }
 
     var model: HubcapGame {
         let trimmed = gameName?.trimmingCharacters(in: .whitespacesAndNewlines)
         return HubcapGame(
             id: gameID,
-            name: (trimmed?.isEmpty == false) ? trimmed! : "App \(gameID)"
+            name: (trimmed?.isEmpty == false) ? trimmed! : "App \(gameID)",
+            appType: appType,
+            manifestAvailable: manifestAvailable,
+            headerImageURL: headerImage.flatMap(URL.init(string:))
         )
     }
 }
@@ -53,6 +74,38 @@ private struct HubcapLibraryResponse: Decodable {
         case sortBy = "sort_by"
         case games
     }
+}
+
+private struct HubcapSearchGame: Decodable {
+    let gameID: String
+    let gameName: String?
+    let appType: String?
+    let manifestAvailable: Bool
+    let headerImage: String?
+
+    enum CodingKeys: String, CodingKey {
+        case gameID = "game_id"
+        case gameName = "game_name"
+        case appType = "app_type"
+        case manifestAvailable = "manifest_available"
+        case headerImage = "header_image"
+    }
+
+    var model: HubcapGame {
+        let trimmed = gameName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return HubcapGame(
+            id: gameID,
+            name: (trimmed?.isEmpty == false) ? trimmed! : "App \(gameID)",
+            appType: appType,
+            manifestAvailable: manifestAvailable,
+            headerImageURL: headerImage.flatMap(URL.init(string:))
+        )
+    }
+}
+
+private struct HubcapSearchResponse: Decodable {
+    let status: String
+    let results: [HubcapSearchGame]
 }
 
 enum HubcapClientError: LocalizedError {
