@@ -444,11 +444,35 @@ final class HubcapViewController: NSViewController {
         return key
     }
 
-    private func usageText(_ stats: HubcapUserStats) -> String? {
-        guard let usage = stats.dailyUsage, let limit = stats.dailyLimit else {
-            return nil
+    private func applyFilter() {
+        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if query.isEmpty {
+            games = allGames
+            emptyLabel.stringValue = "No games returned by Hubcap."
+        } else if query.allSatisfy({ $0.isNumber }) {
+            games = allGames.filter { $0.id == query }
+            emptyLabel.stringValue = "No game matches App ID \(query)."
+        } else {
+            games = allGames.filter {
+                $0.name.range(
+                    of: query,
+                    options: [.caseInsensitive, .diacriticInsensitive]
+                ) != nil
+            }
+            emptyLabel.stringValue = "No games match “\(query)”."
         }
-        return "Daily usage \(usage)/\(limit)."
+
+        tableView.reloadData()
+        emptyLabel.isHidden = !games.isEmpty
+
+        guard !isBusy else { return }
+
+        if query.isEmpty {
+            setStatus("\(allGames.count) games available in Hubcap.", tone: .ok)
+        } else {
+            setStatus("\(games.count) match “\(query)”.", tone: .neutral)
+        }
     }
 
     private func setBusy(_ busy: Bool, status: String? = nil) {
