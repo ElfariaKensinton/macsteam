@@ -347,7 +347,7 @@ final class HubcapViewController: NSViewController {
         updateInstalledMetric()
         updateAPIStatus()
 
-        if !isBusy {
+        if !isBusy && allGames.isEmpty {
             loadLibrary(reset: true)
         }
     }
@@ -361,25 +361,15 @@ final class HubcapViewController: NSViewController {
     @objc private func openHubcapSettings() {
         let alert = NSAlert()
         alert.messageText = "Hubcap Settings"
-        alert.informativeText = "Enter your Hubcap access key once. macSteam will remember it for future launches."
+        alert.informativeText = "Add your Hubcap API key."
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 440, height: 108))
-
-        let keyLabel = NSTextField(labelWithString: "Access key")
-        keyLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        keyLabel.translatesAutoresizingMaskIntoConstraints = false
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 62))
 
         let keyField = NSSecureTextField()
-        keyField.placeholderString = "Paste your Hubcap access key"
+        keyField.placeholderString = "Hubcap API key"
         keyField.stringValue = HubcapCredentialStore.apiKey ?? ""
         keyField.translatesAutoresizingMaskIntoConstraints = false
-        keyField.setAccessibilityLabel("Hubcap access key")
-
-        let urlLabel = NSTextField(labelWithString: "https://hubcapmanifest.com/api-keys/")
-        urlLabel.font = Typography.caption
-        urlLabel.textColor = Colors.secondaryText
-        urlLabel.translatesAutoresizingMaskIntoConstraints = false
-        urlLabel.lineBreakMode = .byTruncatingTail
+        keyField.setAccessibilityLabel("Hubcap API key")
 
         let openURLButton = NSButton(
             title: "Open API key page",
@@ -389,27 +379,31 @@ final class HubcapViewController: NSViewController {
         openURLButton.bezelStyle = .rounded
         openURLButton.controlSize = .small
         openURLButton.translatesAutoresizingMaskIntoConstraints = false
+        styleSecondaryButton(openURLButton)
 
-        container.addSubview(keyLabel)
+        let hint = NSTextField(labelWithString: "Stored locally in macSteam.")
+        hint.font = Typography.caption
+        hint.textColor = Colors.secondaryText
+        hint.translatesAutoresizingMaskIntoConstraints = false
+
         container.addSubview(keyField)
-        container.addSubview(urlLabel)
+        container.addSubview(hint)
         container.addSubview(openURLButton)
 
         NSLayoutConstraint.activate([
-            keyLabel.topAnchor.constraint(equalTo: container.topAnchor),
-            keyLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-
-            keyField.topAnchor.constraint(equalTo: keyLabel.bottomAnchor, constant: 7),
+            keyField.topAnchor.constraint(equalTo: container.topAnchor),
             keyField.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             keyField.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             keyField.heightAnchor.constraint(equalToConstant: 28),
 
-            urlLabel.topAnchor.constraint(equalTo: keyField.bottomAnchor, constant: 8),
-            urlLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            urlLabel.trailingAnchor.constraint(lessThanOrEqualTo: openURLButton.leadingAnchor, constant: -10),
+            hint.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            hint.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            hint.centerYAnchor.constraint(equalTo: openURLButton.centerYAnchor),
+            hint.trailingAnchor.constraint(lessThanOrEqualTo: openURLButton.leadingAnchor, constant: -10),
 
             openURLButton.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            openURLButton.centerYAnchor.constraint(equalTo: urlLabel.centerYAnchor),
+            openURLButton.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            openURLButton.heightAnchor.constraint(equalToConstant: 24),
         ])
 
         alert.accessoryView = container
