@@ -605,6 +605,7 @@ private final class HubcapGameCell: NSTableCellView {
     private let installButton = NSButton(title: "Install", target: nil, action: nil)
 
     private var imageTask: Task<Void, Never>?
+    private var nameTask: Task<Void, Never>?
     private var representedID = ""
 
     var onInstall: (() -> Void)?
@@ -682,10 +683,12 @@ private final class HubcapGameCell: NSTableCellView {
 
     deinit {
         imageTask?.cancel()
+        nameTask?.cancel()
     }
 
     func configure(game: HubcapGame) {
         imageTask?.cancel()
+        nameTask?.cancel()
         representedID = game.id
 
         nameLabel.stringValue = game.name
@@ -697,10 +700,11 @@ private final class HubcapGameCell: NSTableCellView {
             let resolver = onResolveName
             nameLabel.stringValue = "Loading game name…"
 
-            Task { [weak self] in
-                guard let resolver, let resolved = await resolver(appID) else { return }
-                guard let self, self.representedID == expectedID else { return }
-                self.nameLabel.stringValue = resolved
+            nameTask = Task { [weak self] in
+                guard let resolver else { return }
+                let resolved = await resolver(appID)
+                guard let self, self.representedID == expectedID, !Task.isCancelled else { return }
+                self.nameLabel.stringValue = resolved ?? game.name
             }
         }
 
