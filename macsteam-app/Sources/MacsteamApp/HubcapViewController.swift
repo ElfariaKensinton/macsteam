@@ -1127,6 +1127,21 @@ private final class HubcapSettingsDialogController: NSObject {
         alert.window.initialFirstResponder = keyField
         alert.layout()
 
+        // NSAlert owns the response-button container. On macOS it can switch this
+        // container to a vertical stack when the alert is too narrow. Keep the
+        // native buttons and their styling intact, but force that container to
+        // remain a single horizontal row.
+        var view: NSView? = connectButton
+        while let current = view?.superview {
+            if let stack = current as? NSStackView {
+                stack.orientation = .horizontal
+                break
+            }
+            view = current
+        }
+
+        alert.layout()
+
         switch alert.runModal() {
         case .alertFirstButtonReturn:
             return .cancel
