@@ -158,12 +158,23 @@ final class HubcapClient: @unchecked Sendable {
     }
 
     private func decodeLibraryPage(_ data: Data) throws -> HubcapLibraryPage {
-        let object = try JSONSerialization.jsonObject(with: data)
+        let object: Any
+        do {
+            object = try jsonObject(from: data)
+        } catch {
+            throw HubcapClientError.invalidResponse(
+                endpoint: "/api/v1/library",
+                preview: responsePreview(data)
+            )
+        }
 
         if let array = object as? [[String: Any]] {
             let games = decodeGames(array)
             guard !games.isEmpty || array.isEmpty else {
-                throw HubcapClientError.invalidResponse(endpoint: "/api/v1/library")
+                throw HubcapClientError.invalidResponse(
+                    endpoint: "/api/v1/library",
+                    preview: responsePreview(data)
+                )
             }
             return HubcapLibraryPage(totalCount: games.count, games: games)
         }
