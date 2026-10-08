@@ -12,6 +12,33 @@ struct HubcapLibraryPage: Sendable {
     let games: [HubcapGame]
 }
 
+private struct HubcapLibraryResponse: Decodable {
+    let status: String
+    let totalCount: Int
+    let limit: Int
+    let offset: Int
+    let search: String?
+    let sortBy: String?
+    let games: [HubcapGame]
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case totalCount = "total_count"
+        case limit
+        case offset
+        case search
+        case sortBy = "sort_by"
+        case games
+    }
+}
+
+extension HubcapGame {
+    enum CodingKeys: String, CodingKey {
+        case id = "game_id"
+        case name = "game_name"
+    }
+}
+
 enum HubcapClientError: LocalizedError {
     case invalidAPIKey
     case invalidSearch
@@ -41,33 +68,6 @@ enum HubcapClientError: LocalizedError {
         case .invalidLuaResponse(let appID, let preview):
             return "Hubcap returned invalid Lua for App \(appID). Response starts with: \(preview)"
         }
-    }
-}
-
-private struct HubcapLibraryResponse: Decodable {
-    let status: String
-    let totalCount: Int
-    let limit: Int
-    let offset: Int
-    let search: String?
-    let sortBy: String?
-    let games: [HubcapGame]
-
-    enum CodingKeys: String, CodingKey {
-        case status
-        case totalCount = "total_count"
-        case limit
-        case offset
-        case search
-        case sortBy = "sort_by"
-        case games
-    }
-}
-
-extension HubcapGame {
-    enum CodingKeys: String, CodingKey {
-        case id = "game_id"
-        case name = "game_name"
     }
 }
 
@@ -128,7 +128,63 @@ final class HubcapClient: @unchecked Sendable {
         )
         let (data, response) = try await session.data(for: request)
         try validate(response)
+        return try decodeLibraryPage(data)
+    }
 
+    func downloadLuaText(appID: Int, apiKey: String) async throws -> String {
+        let request = try makeRequest(
+            url: baseURL.appendingPathComponent("/api/v1/lua/\(appID)"),
+            apiKey: apiKey,
+            accept: "text/plain"
+        )
+        let (data, response) = try await session.data(for: request)
+        try validate(response)
+
+        guard !data.isEmpty else {
+            throw HubcapClientError.unavailable
+        }
+
+        // Hubcap returns the Lua script as the response body. Decode the body directly instead of
+        // round-tripping it through a temporary .lua file and Foundation's file-format detection.
+        var text = String(decoding: data, as: UTF8.self)
+        if text.unicodeScalars.first == "\u{FEFF}" {
+            text.removeFirst()
+        }
+
+        guard LuaManifestParser.containsAddApp(text) else {
+            throw HubcapClientError.invalidLuaResponse(appID: appID, preview: preview(of: text))
+        }
+
+        return text
+    }
+
+    private func preview(of text: String) -> String {
+        let compact = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return String(compact.prefix(120))
+    }
+
+    private func makeRequest(url: URL, apiKey: String, accept: String) throws -> URLRequest {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard key.range(
+            of: #"^smm_[0-9a-f]{96}$"#,
+            options: .regularExpression
+        ) != nil else {
+            throw HubcapClientError.invalidAPIKey
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.setValue(accept, forHTTPHeaderField: "Accept")
+        request.setValue("macSteam Hubcap Client", forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 60
+        return request
+    }
+
+    private func decodeLibraryPage(_ data: Data) throws -> HubcapLibraryPage {
         var bytes = data
         if bytes.starts(with: [0xEF, 0xBB, 0xBF]) {
             bytes.removeFirst(3)
@@ -136,6 +192,7 @@ final class HubcapClient: @unchecked Sendable {
 
         do {
             let payload = try JSONDecoder().decode(HubcapLibraryResponse.self, from: bytes)
+
             guard payload.status == "success" else {
                 throw HubcapClientError.invalidResponse(
                     endpoint: "/api/v1/library",
@@ -155,6 +212,14 @@ final class HubcapClient: @unchecked Sendable {
                 preview: responsePreview(data)
             )
         }
+    }
+
+    private func responsePreview(_ data: Data) -> String {
+        let text = String(decoding: data.prefix(240), as: UTF8.self)
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? "<empty body>" : text
     }
 
     private func validate(_ response: URLResponse) throws {
