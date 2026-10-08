@@ -87,7 +87,7 @@ final class HubcapClient: @unchecked Sendable {
     }
 
     func downloadLua(appID: Int, apiKey: String) async throws -> URL {
-        let request = try makeRequest(path: "/api/v1/lua/\\(appID)", apiKey: apiKey)
+        let request = try makeRequest(url: baseURL.appendingPathComponent("/api/v1/lua/\\(appID)"), apiKey: apiKey)
         let (data, response) = try await session.data(for: request)
         try validate(response)
 
