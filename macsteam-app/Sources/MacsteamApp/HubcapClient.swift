@@ -57,13 +57,13 @@ final class HubcapClient: @unchecked Sendable {
         self.session = session
     }
 
-    func libraryPage(apiKey: String, limit: Int = 100, offset: Int = 0) async throws -> HubcapLibraryPage {
+    func libraryPage(apiKey: String, limit: Int = 1000, offset: Int = 0) async throws -> HubcapLibraryPage {
         var components = URLComponents(
             url: baseURL.appendingPathComponent("/api/v1/library"),
             resolvingAgainstBaseURL: false
         )!
         components.queryItems = [
-            URLQueryItem(name: "limit", value: String(min(max(limit, 1), 100))),
+            URLQueryItem(name: "limit", value: String(min(max(limit, 1), 1000))),
             URLQueryItem(name: "offset", value: String(max(offset, 0))),
             URLQueryItem(name: "sort_by", value: "name"),
         ]
@@ -89,14 +89,14 @@ final class HubcapClient: @unchecked Sendable {
 
         guard
             let raw = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let canMakeRequests = raw["can_make_requests"] as? Bool
+            let canMakeRequests = boolValue(raw["can_make_requests"])
         else {
             throw HubcapClientError.invalidResponse
         }
 
         return HubcapUserStats(
-            dailyUsage: raw["daily_usage"] as? Int,
-            dailyLimit: raw["daily_limit"] as? Int,
+            dailyUsage: intValue(raw["daily_usage"]),
+            dailyLimit: intValue(raw["daily_limit"]),
             canMakeRequests: canMakeRequests
         )
     }
@@ -138,35 +138,68 @@ final class HubcapClient: @unchecked Sendable {
     }
 
     private func decodeLibraryPage(_ data: Data) throws -> HubcapLibraryPage {
-        guard let raw = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        let object = try JSONSerialization.jsonObject(with: data)
+
+        let root: [String: Any]
+        if let dictionary = object as? [String: Any] {
+            root = dictionary
+        } else if let array = object as? [[String: Any]] {
+            return HubcapLibraryPage(
+                totalCount: array.count,
+                games: decodeGames(array)
+            )
+        } else {
             throw HubcapClientError.invalidResponse
         }
 
-        let total = intValue(raw["total_count"]) ?? 0
-        let items = (raw["games"] as? [[String: Any]] ?? []).compactMap { item -> HubcapGame? in
+        let payload: [String: Any]
+        if let nested = root["data"] as? [String: Any] {
+            payload = nested
+        } else if let nested = root["result"] as? [String: Any] {
+            payload = nested
+        } else {
+            payload = root
+        }
+
+        let rawGames =
+            (payload["games"] as? [[String: Any]])
+            ?? (payload["items"] as? [[String: Any]])
+            ?? (payload["results"] as? [[String: Any]])
+            ?? []
+
+        let games = decodeGames(rawGames)
+        let total = intValue(payload["total_count"])
+            ?? intValue(payload["total"])
+            ?? intValue(payload["count"])
+            ?? games.count
+
+        guard !games.isEmpty || total == 0 else {
+            throw HubcapClientError.invalidResponse
+        }
+
+        return HubcapLibraryPage(totalCount: total, games: games)
+    }
+
+    private func decodeGames(_ items: [[String: Any]]) -> [HubcapGame] {
+        items.compactMap { item -> HubcapGame? in
             let rawID =
-                stringValue(item["game_id"])
-                ?? stringValue(item["app_id"])
+                stringValue(item["app_id"])
+                ?? stringValue(item["game_id"])
+                ?? stringValue(item["appid"])
+                ?? stringValue(item["gameid"])
+
             let name =
                 stringValue(item["game_name"])
                 ?? stringValue(item["name"])
+                ?? stringValue(item["title"])
+                ?? stringValue(item["display_name"])
 
-            guard
-                let rawID,
-                let name,
-                !rawID.isEmpty,
-                !name.isEmpty
-            else {
+            guard let rawID, let name, !rawID.isEmpty, !name.isEmpty else {
                 return nil
             }
 
             return HubcapGame(id: rawID, name: name)
         }
-
-        return HubcapLibraryPage(
-            totalCount: total > 0 ? total : items.count,
-            games: items
-        )
     }
 
     private func stringValue(_ value: Any?) -> String? {
@@ -188,6 +221,23 @@ final class HubcapClient: @unchecked Sendable {
         }
         if let value = value as? String {
             return Int(value)
+        }
+        return nil
+    }
+
+    private func boolValue(_ value: Any?) -> Bool? {
+        if let value = value as? Bool {
+            return value
+        }
+        if let value = value as? NSNumber {
+            return value.boolValue
+        }
+        if let value = value as? String {
+            switch value.lowercased() {
+            case "true", "1", "yes": return true
+            case "false", "0", "no": return false
+            default: return nil
+            }
         }
         return nil
     }
