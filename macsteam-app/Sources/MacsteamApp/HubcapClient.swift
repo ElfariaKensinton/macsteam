@@ -19,7 +19,7 @@ enum HubcapClientError: LocalizedError {
     case rateLimited
     case unavailable
     case http(Int)
-    case invalidResponse
+    case invalidResponse(endpoint: String)
 
     var errorDescription: String? {
         switch self {
@@ -36,7 +36,7 @@ enum HubcapClientError: LocalizedError {
         case .http(let status):
             return "Hubcap returned HTTP \(status)."
         case .invalidResponse:
-            return "Hubcap returned an unexpected response."
+            return "Hubcap returned an unexpected response from \(endpoint)."
         }
     }
 }
@@ -49,6 +49,36 @@ final class HubcapClient: @unchecked Sendable {
 
     init(session: URLSession = .shared) {
         self.session = session
+    }
+
+    func allGames(apiKey: String) async throws -> [HubcapGame] {
+        let request = try makeRequest(
+            url: baseURL.appendingPathComponent("/api/v1/games"),
+            apiKey: apiKey,
+            accept: "application/json"
+        )
+        let (data, response) = try await session.data(for: request)
+        try validate(response)
+
+        let object = try JSONSerialization.jsonObject(with: data)
+        if let items = object as? [[String: Any]] {
+            return decodeGames(items)
+        }
+
+        guard let root = object as? [String: Any] else {
+            throw HubcapClientError.invalidResponse(endpoint: "/api/v1/games")
+        }
+
+        let items =
+            (root["games"] as? [[String: Any]])
+            ?? (root["items"] as? [[String: Any]])
+            ?? (root["results"] as? [[String: Any]])
+
+        guard let items else {
+            throw HubcapClientError.invalidResponse(endpoint: "/api/v1/games")
+        }
+
+        return decodeGames(items)
     }
 
     func libraryPage(apiKey: String, limit: Int = 1000, offset: Int = 0) async throws -> HubcapLibraryPage {
