@@ -257,13 +257,15 @@ final class HubcapViewController: NSViewController {
             setBusy(true, status: "Loading Hubcap library…")
             Task {
                 do {
-                    let page = try await client.libraryPage(
-                        apiKey: key,
-                        limit: 1000,
-                        offset: 0
-                    )
-
-                    let loaded = page.games
+                    var loaded = try await client.allGames(apiKey: key)
+                    if loaded.isEmpty {
+                        let page = try await client.libraryPage(
+                            apiKey: key,
+                            limit: 1000,
+                            offset: 0
+                        )
+                        loaded = page.games
+                    }
                     let deduped = deduplicateAndSort(loaded)
                     allGames = deduped
                     totalCount = page.totalCount > 0 ? page.totalCount : deduped.count
@@ -325,29 +327,37 @@ final class HubcapViewController: NSViewController {
     private func loadLibrary() {
         guard !isBusy, let key = currentKey() else { return }
 
-        setBusy(true, status: "Loading Hubcap library…")
+        setBusy(true, status: "Loading Hubcap game catalog…")
 
         Task {
             do {
-                let page = try await client.libraryPage(
-                    apiKey: key,
-                    limit: 1000,
-                    offset: 0
-                )
+                var loaded = try await client.allGames(apiKey: key)
 
-                allGames = deduplicateAndSort(page.games)
-                totalCount = page.totalCount > 0 ? page.totalCount : allGames.count
+                // /games is the full-catalog endpoint used by current Hubcap clients.
+                // Keep /library as a compatibility fallback for deployments that don't expose it.
+                if loaded.isEmpty {
+                    let page = try await client.libraryPage(
+                        apiKey: key,
+                        limit: 1000,
+                        offset: 0
+                    )
+                    loaded = page.games
+                }
+
+                allGames = deduplicateAndSort(loaded)
+                totalCount = allGames.count
                 applyFilter()
                 setBusy(false)
 
-                if allGames.isEmpty {
-                    setStatus("Hubcap returned an empty library.", tone: .bad)
-                } else {
-                    setStatus(
-                        "Loaded \(allGames.count) of \(totalCount) games.",
-                        tone: .ok
-                    )
+                guard !allGames.isEmpty else {
+                    setStatus("Hubcap returned no games.", tone: .bad)
+                    return
                 }
+
+                setStatus(
+                    "Loaded \(allGames.count) games. Search is local; typing does not call Hubcap.",
+                    tone: .ok
+                )
             } catch {
                 setBusy(false)
                 setStatus(error.localizedDescription, tone: .bad)
