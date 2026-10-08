@@ -15,7 +15,9 @@ actor HubcapLibraryCache {
 
     func load() -> HubcapLibrarySnapshot? {
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
-        return try? JSONDecoder().decode(HubcapLibrarySnapshot.self, from: data)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(HubcapLibrarySnapshot.self, from: data)
     }
 
     func save(_ snapshot: HubcapLibrarySnapshot) throws {
