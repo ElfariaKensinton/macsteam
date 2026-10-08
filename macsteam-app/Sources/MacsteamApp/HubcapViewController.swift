@@ -187,7 +187,7 @@ final class HubcapViewController: NSViewController {
         scopeControl.setAccessibilityLabel("Hubcap game filter")
 
         refreshButton = NSButton(
-            image: NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "Refresh"),
+            image: NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "Refresh")!,
             target: self,
             action: #selector(refreshLibrary)
         )
@@ -618,6 +618,19 @@ final class HubcapViewController: NSViewController {
     }
 
     // MARK: Install
+
+    private func deduplicateAndSort(_ input: [HubcapGame]) -> [HubcapGame] {
+        var seen = Set<String>()
+        return input
+            .filter { seen.insert($0.id).inserted }
+            .sorted {
+                let order = $0.name.localizedCaseInsensitiveCompare($1.name)
+                if order == .orderedSame {
+                    return $0.id.localizedStandardCompare($1.id) == .orderedAscending
+                }
+                return order == .orderedAscending
+            }
+    }
 
     private func install(game: HubcapGame) {
         guard !isBusy, let appID = game.appID, let key = currentKey() else { return }
