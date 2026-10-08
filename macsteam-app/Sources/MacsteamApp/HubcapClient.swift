@@ -117,6 +117,22 @@ private struct HubcapSearchResponse: Decodable {
     let results: [HubcapSearchGame]
 }
 
+struct HubcapUserStats: Decodable, Sendable {
+    let userID: String
+    let dailyUsage: Int
+    let dailyLimit: Int
+    let canMakeRequests: Bool
+    let apiKeyExpiresAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
+        case dailyUsage = "daily_usage"
+        case dailyLimit = "daily_limit"
+        case canMakeRequests = "can_make_requests"
+        case apiKeyExpiresAt = "api_key_expires_at"
+    }
+}
+
 enum HubcapClientError: LocalizedError {
     case invalidAPIKey
     case invalidSearch
@@ -228,6 +244,39 @@ final class HubcapClient: @unchecked Sendable {
         }
     }
 
+
+    func userStats(apiKey: String) async throws -> HubcapUserStats {
+        var components = URLComponents(
+            url: baseURL.appendingPathComponent("/api/v1/user/stats"),
+            resolvingAgainstBaseURL: false
+        )!
+        components.queryItems = [
+            URLQueryItem(name: "api_key", value: apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
+        ]
+
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("macSteam Hubcap Client", forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 30
+
+        let (data, response) = try await session.data(for: request)
+        try validate(response)
+
+        var bytes = data
+        if bytes.starts(with: [0xEF, 0xBB, 0xBF]) {
+            bytes.removeFirst(3)
+        }
+
+        do {
+            return try JSONDecoder().decode(HubcapUserStats.self, from: bytes)
+        } catch {
+            throw HubcapClientError.invalidResponse(
+                endpoint: "/api/v1/user/stats",
+                preview: responsePreview(data)
+            )
+        }
+    }
 
     func steamAppName(appID: Int) async -> String? {
         let cacheKey = NSNumber(value: appID)
