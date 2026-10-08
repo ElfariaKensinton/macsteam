@@ -518,6 +518,12 @@ final class HubcapViewController: NSViewController {
         return key
     }
 
+    @objc private func copyStatus() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(statusLabel.stringValue, forType: .string)
+    }
+
     private func setBusy(_ busy: Bool, status: String? = nil) {
         isBusy = busy
         spinner.isHidden = !busy
@@ -549,7 +555,7 @@ final class HubcapViewController: NSViewController {
 
 extension HubcapViewController: NSSearchFieldDelegate {
     func controlTextDidEndEditing(_ obj: Notification) {
-        applyFilter()
+        scheduleSearch()
     }
 }
 
