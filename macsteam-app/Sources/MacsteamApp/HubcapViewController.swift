@@ -822,9 +822,6 @@ extension HubcapViewController: NSTableViewDataSource, NSTableViewDelegate {
             ?? HubcapGameCell(identifier: identifier)
 
         let game = games[row]
-        cell.onResolveName = { [client] appID in
-            await client.steamAppName(appID: appID)
-        }
         cell.isInstalled = isInstalled(game)
         cell.configure(game: game)
         cell.onInstall = { [weak self] in
@@ -858,7 +855,6 @@ private final class HubcapGameCell: NSTableCellView {
     private var representedID = ""
 
     var onInstall: (() -> Void)?
-    var onResolveName: ((Int) async -> String?)?
     var isInstalled = false
 
     init(identifier: NSUserInterfaceItemIdentifier) {
@@ -984,19 +980,6 @@ private final class HubcapGameCell: NSTableCellView {
         nameLabel.stringValue = game.name
         let type = game.appType?.capitalized ?? "App"
         metaLabel.stringValue = "App ID \(game.id)  •  \(type)"
-
-        if game.name == "App \(game.id)", let appID = game.appID {
-            let expectedID = game.id
-            let resolver = onResolveName
-            nameLabel.stringValue = "Loading game name…"
-
-            nameTask = Task { [weak self] in
-                guard let resolver else { return }
-                let resolved = await resolver(appID)
-                guard let self, self.representedID == expectedID, !Task.isCancelled else { return }
-                self.nameLabel.stringValue = resolved ?? game.name
-            }
-        }
 
         availabilityLabel.stringValue = game.manifestAvailable ? "Manifest available" : "No manifest"
         availabilityLabel.textColor = game.manifestAvailable ? Colors.secondaryText : Colors.quiet
