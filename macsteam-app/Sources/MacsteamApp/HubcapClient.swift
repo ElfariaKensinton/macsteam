@@ -133,8 +133,12 @@ struct HubcapUserStats: Decodable, Sendable {
     }
 }
 
-struct HubcapUsage: Sendable {
-    let count: Int
+struct HubcapUsage: Decodable, Sendable {
+    struct Single: Decodable, Sendable {
+        let usage: Int
+    }
+
+    let single: Single
 }
 
 enum HubcapClientError: LocalizedError {
@@ -291,17 +295,14 @@ final class HubcapClient: @unchecked Sendable {
         let (data, response) = try await session.data(for: request)
         try validate(response)
 
-        guard
-            let object = try? JSONSerialization.jsonObject(with: data),
-            let count = Self.findUsageCount(in: object)
-        else {
+        do {
+            return try JSONDecoder().decode(HubcapUsage.self, from: data)
+        } catch {
             throw HubcapClientError.invalidResponse(
                 endpoint: "/api/v1/generate/usage",
                 preview: responsePreview(data)
             )
         }
-
-        return HubcapUsage(count: count)
     }
 
     func steamAppName(appID: Int) async -> String? {
@@ -376,41 +377,6 @@ final class HubcapClient: @unchecked Sendable {
         }
 
         return text
-    }
-
-    private static func findUsageCount(in value: Any) -> Int? {
-        if let number = value as? NSNumber {
-            return number.intValue
-        }
-
-        guard let object = value as? [String: Any] else {
-            return nil
-        }
-
-        let preferredKeys = [
-            "use_count",
-            "useCount",
-            "usage_count",
-            "usageCount",
-            "daily_usage",
-            "dailyUsage",
-            "uses",
-            "count"
-        ]
-
-        for key in preferredKeys {
-            if let number = object[key] as? NSNumber {
-                return number.intValue
-            }
-        }
-
-        for key in ["data", "usage", "result"] {
-            if let nested = object[key], let count = findUsageCount(in: nested) {
-                return count
-            }
-        }
-
-        return nil
     }
 
     private func preview(of text: String) -> String {
