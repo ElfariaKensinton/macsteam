@@ -1115,19 +1115,20 @@ private final class HubcapSettingsDialogController: NSObject {
         ])
 
         alert.accessoryView = accessory
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Disconnect")
         alert.addButton(withTitle: "Connect")
+        alert.addButton(withTitle: "Disconnect")
+        alert.addButton(withTitle: "Cancel")
 
         let buttons = alert.buttons
-        buttons[0].keyEquivalent = "\u{1b}"
-        buttons[2].keyEquivalent = "\r"
+        buttons[0].keyEquivalent = "\r"
+        buttons[2].keyEquivalent = "\u{1b}"
         buttons[1].isEnabled = apiKey != nil && !(apiKey?.isEmpty ?? true)
 
-        // Keep the native alert button row compact and right-aligned.
-        let widths: [CGFloat] = [68, 92, 76]
+        // Keep the three actions compact; NSAlert lays its button bar out at the trailing edge.
+        let widths: [CGFloat] = [76, 92, 68]
         for (button, width) in zip(buttons, widths) {
             button.controlSize = .small
+            button.translatesAutoresizingMaskIntoConstraints = false
             button.setContentHuggingPriority(.required, for: .horizontal)
             button.setContentCompressionResistancePriority(.required, for: .horizontal)
             button.widthAnchor.constraint(equalToConstant: width).isActive = true
@@ -1139,11 +1140,11 @@ private final class HubcapSettingsDialogController: NSObject {
 
         switch alert.runModal() {
         case .alertFirstButtonReturn:
-            return .cancel
+            return .connect(keyField.stringValue)
         case .alertSecondButtonReturn:
             return .disconnect
         case .alertThirdButtonReturn:
-            return .connect(keyField.stringValue)
+            return .cancel
         default:
             return .cancel
         }
