@@ -1034,6 +1034,7 @@ private final class HubcapSettingsWindowController: NSWindowController, NSWindow
 
     private(set) var result: Result = .cancel
     private let keyField: NSSecureTextField
+    private var actionTargets: [BlockTarget] = []
 
     init(apiKey: String?, openAPIKeys: @escaping () -> Void) {
         keyField = NSSecureTextField()
@@ -1151,10 +1152,7 @@ private final class HubcapSettingsWindowController: NSWindowController, NSWindow
         cancelButton.action = #selector(BlockTarget.invoke)
 
         // Retain action targets for the lifetime of the window.
-        objc_setAssociatedObject(connectButton, "hubcapActionTarget", connectTarget, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-        objc_setAssociatedObject(disconnectButton, "hubcapActionTarget", disconnectTarget, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-        objc_setAssociatedObject(cancelButton, "hubcapActionTarget", cancelTarget, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-        objc_setAssociatedObject(getKeyButton, "hubcapActionTarget", getKeyButton.target, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        actionTargets = [connectTarget, disconnectTarget, cancelTarget, getKeyButton.target as! BlockTarget]
 
         window.delegate = self
         window.initialFirstResponder = keyField
