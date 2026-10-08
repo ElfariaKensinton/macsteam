@@ -11,17 +11,16 @@ final class HubcapViewController: NSViewController {
     private var apiKeyField: NSSecureTextField!
     private var saveKeyButton: NSButton!
     private var forgetKeyButton: NSButton!
-    private var openHubcapButton: NSButton!
+    private var apiKeysButton: NSButton!
 
     private var searchField: NSSearchField!
-    private var searchButton: NSButton!
-    private var clearSearchButton: NSButton!
     private var refreshButton: NSButton!
     private var tableView: NSTableView!
     private var statusLabel: NSTextField!
     private var spinner: NSProgressIndicator!
     private var emptyLabel: NSTextField!
 
+    private var allGames: [HubcapGame] = []
     private var games: [HubcapGame] = []
     private var totalCount = 0
     private var isBusy = false
@@ -35,7 +34,7 @@ final class HubcapViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError() }
 
     override func loadView() {
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: 700, height: 560))
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 760, height: 620))
         root.translatesAutoresizingMaskIntoConstraints = false
 
         let title = NSTextField(labelWithString: "Hubcap")
@@ -44,7 +43,7 @@ final class HubcapViewController: NSViewController {
         title.translatesAutoresizingMaskIntoConstraints = false
 
         let subtitle = NSTextField(labelWithString:
-            "Browse every game in Hubcap, search by name or App ID, and install its Lua manifest."
+            "Browse the full Hubcap game library and install Lua manifests directly into macSteam."
         )
         subtitle.font = Typography.body
         subtitle.textColor = Colors.secondaryText
@@ -52,10 +51,10 @@ final class HubcapViewController: NSViewController {
         subtitle.maximumNumberOfLines = 0
         subtitle.translatesAutoresizingMaskIntoConstraints = false
 
-        let authHeader = settingsGroupLabel("Authentication")
+        let authHeader = settingsGroupLabel("API access")
         let authCopy = NSTextField(labelWithString:
-            "Discord sign-in is the separate Hubcap website account flow. Native API access uses the "
-            + "API key generated for that account; macSteam stores only that API key in Keychain."
+            "Paste a Hubcap API key. macSteam stores it in Keychain and uses Bearer authentication "
+            + "for the Hubcap API."
         )
         authCopy.font = Typography.caption
         authCopy.textColor = Colors.secondaryText
@@ -63,10 +62,10 @@ final class HubcapViewController: NSViewController {
         authCopy.maximumNumberOfLines = 0
         authCopy.translatesAutoresizingMaskIntoConstraints = false
 
-        openHubcapButton = makeButton(
-            title: "Open Hubcap with Discord",
+        apiKeysButton = makeButton(
+            title: "Open API Keys",
             target: self,
-            action: #selector(openHubcap)
+            action: #selector(openAPIKeys)
         )
 
         apiKeyField = NSSecureTextField()
@@ -74,10 +73,10 @@ final class HubcapViewController: NSViewController {
         apiKeyField.translatesAutoresizingMaskIntoConstraints = false
         apiKeyField.setAccessibilityLabel("Hubcap API key")
 
-        saveKeyButton = makeButton(title: "Save Key", target: self, action: #selector(saveKey))
+        saveKeyButton = makeButton(title: "Save & Verify", target: self, action: #selector(saveKey))
         forgetKeyButton = makeButton(title: "Forget Key", target: self, action: #selector(forgetKey))
 
-        let authButtons = NSStackView(views: [openHubcapButton, saveKeyButton, forgetKeyButton])
+        let authButtons = NSStackView(views: [apiKeysButton, saveKeyButton, forgetKeyButton])
         authButtons.orientation = .horizontal
         authButtons.alignment = .centerY
         authButtons.spacing = 8
@@ -97,7 +96,7 @@ final class HubcapViewController: NSViewController {
 
             apiKeyField.topAnchor.constraint(equalTo: authCopy.bottomAnchor, constant: 12),
             apiKeyField.leadingAnchor.constraint(equalTo: authCard.leadingAnchor, constant: 14),
-            apiKeyField.widthAnchor.constraint(equalToConstant: 260),
+            apiKeyField.widthAnchor.constraint(equalToConstant: 290),
 
             authButtons.leadingAnchor.constraint(equalTo: apiKeyField.trailingAnchor, constant: 12),
             authButtons.trailingAnchor.constraint(lessThanOrEqualTo: authCard.trailingAnchor, constant: -14),
@@ -111,14 +110,13 @@ final class HubcapViewController: NSViewController {
         searchField.placeholderString = "Search by game name or App ID"
         searchField.translatesAutoresizingMaskIntoConstraints = false
         searchField.setAccessibilityLabel("Search Hubcap games")
+        searchField.delegate = self
         searchField.target = self
         searchField.action = #selector(searchFieldSubmitted)
 
-        searchButton = makeButton(title: "Search", target: self, action: #selector(search))
-        clearSearchButton = makeButton(title: "Clear", target: self, action: #selector(clearSearch))
         refreshButton = makeButton(title: "Refresh", target: self, action: #selector(refreshLibrary))
 
-        let searchRow = NSStackView(views: [searchField, searchButton, clearSearchButton, refreshButton])
+        let searchRow = NSStackView(views: [searchField, refreshButton])
         searchRow.orientation = .horizontal
         searchRow.alignment = .centerY
         searchRow.spacing = 8
@@ -135,7 +133,7 @@ final class HubcapViewController: NSViewController {
         tableView.style = .inset
 
         let gameColumn = NSTableColumn(identifier: .init("game"))
-        gameColumn.resizingMask = .autoresizingMask
+        gameColumn.resizingMask = .autoresizesAllColumns
         tableView.addTableColumn(gameColumn)
 
         let scroll = makeScrollView()
@@ -166,7 +164,7 @@ final class HubcapViewController: NSViewController {
             emptyLabel.trailingAnchor.constraint(lessThanOrEqualTo: tableContainer.trailingAnchor, constant: -20),
         ])
 
-        statusLabel = NSTextField(labelWithString: "Loading Hubcap library…")
+        statusLabel = NSTextField(labelWithString: "Enter your Hubcap API key to load the library.")
         statusLabel.font = Typography.caption
         statusLabel.textColor = Colors.secondaryText
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -210,7 +208,7 @@ final class HubcapViewController: NSViewController {
             authCard.widthAnchor.constraint(equalTo: stack.widthAnchor),
             searchRow.widthAnchor.constraint(equalTo: stack.widthAnchor),
             tableContainer.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            tableContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 260),
+            tableContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 300),
             subtitle.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
 
@@ -221,35 +219,65 @@ final class HubcapViewController: NSViewController {
 
     override func viewDidAppear() {
         super.viewDidAppear()
-        apiKeyField.stringValue = KeychainStore.read(account: keychainAccount) ?? ""
-        guard !apiKeyField.stringValue.isEmpty else {
-            setStatus("Open Hubcap with Discord, create an API key, and save it here.", tone: .neutral)
+
+        let stored = KeychainStore.read(account: keychainAccount) ?? ""
+        if apiKeyField.stringValue != stored {
+            apiKeyField.stringValue = stored
+        }
+
+        guard !stored.isEmpty else {
+            setStatus("Enter your Hubcap API key, then choose Save & Verify.", tone: .neutral)
             return
         }
-        if games.isEmpty {
+
+        if allGames.isEmpty {
             loadLibrary()
+        } else {
+            applyFilter()
         }
     }
 
-    @objc private func openHubcap() {
-        NSWorkspace.shared.open(HubcapClient.hubcapURL)
+    @objc private func openAPIKeys() {
+        NSWorkspace.shared.open(HubcapClient.apiKeysURL)
     }
 
     @objc private func saveKey() {
+        guard !isBusy else { return }
+
         do {
             let key = try validatedKey()
-            try KeychainStore.write(key, account: keychainAccount)
-            setStatus("Hubcap API key saved. Loading library…", tone: .ok)
-            loadLibrary()
+            setBusy(true, status: "Verifying Hubcap API key…")
+
+            Task {
+                do {
+                    let stats = try await client.userStats(apiKey: key)
+                    try KeychainStore.write(key, account: keychainAccount)
+                    apiKeyField.stringValue = key
+
+                    setBusy(false)
+                    if let usage = usageText(stats) {
+                        setStatus("API key verified. \(usage)", tone: .ok)
+                    } else {
+                        setStatus("API key verified. Loading library…", tone: .ok)
+                    }
+                    loadLibrary()
+                } catch {
+                    setBusy(false)
+                    setStatus(error.localizedDescription, tone: .bad)
+                }
+            }
         } catch {
             setStatus(error.localizedDescription, tone: .bad)
         }
     }
 
     @objc private func forgetKey() {
+        guard !isBusy else { return }
+
         do {
             try KeychainStore.delete(account: keychainAccount)
             apiKeyField.stringValue = ""
+            allGames.removeAll()
             games.removeAll()
             totalCount = 0
             tableView.reloadData()
@@ -261,89 +289,100 @@ final class HubcapViewController: NSViewController {
     }
 
     @objc private func searchFieldSubmitted() {
-        search()
-    }
-
-    @objc private func search() {
-        guard !isBusy else { return }
-        guard currentKey() != nil else { return }
-
-        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if query.isEmpty {
-            loadLibrary()
-            return
-        }
-        guard query.count >= 3 else {
-            setStatus("Search requires at least 3 characters.", tone: .bad)
-            return
-        }
-
-        guard let key = currentKey() else { return }
-        setBusy(true, status: "Searching Hubcap…")
-
-        Task {
-            do {
-                let page = try await client.search(query: query, apiKey: key)
-                games = page.games.sorted {
-                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-                }
-                totalCount = page.totalCount
-                updateList()
-                setBusy(false)
-                let noun = games.count == 1 ? "game" : "games"
-                setStatus("Found (games.count) (noun) for “(query)”.", tone: .ok)
-            } catch {
-                setBusy(false)
-                setStatus(error.localizedDescription, tone: .bad)
-            }
-        }
-    }
-
-    @objc private func clearSearch() {
-        searchField.stringValue = ""
-        loadLibrary()
+        applyFilter()
     }
 
     @objc private func refreshLibrary() {
         guard !isBusy else { return }
-        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if query.isEmpty {
-            loadLibrary()
-        } else {
-            search()
-        }
+        loadLibrary()
+    }
+
+    func controlTextDidChange(_ obj: Notification) {
+        guard !isBusy else { return }
+        applyFilter()
     }
 
     private func loadLibrary() {
-        guard !isBusy else { return }
-        guard let key = currentKey() else { return }
+        guard !isBusy, let key = currentKey() else { return }
 
         setBusy(true, status: "Loading Hubcap library…")
+
         Task {
             do {
                 var loaded: [HubcapGame] = []
                 var offset = 0
                 var total = 0
 
-                repeat {
-                    let page = try await client.libraryPage(apiKey: key, limit: 100, offset: offset)
+                while true {
+                    let page = try await client.libraryPage(
+                        apiKey: key,
+                        limit: 100,
+                        offset: offset
+                    )
+
                     loaded.append(contentsOf: page.games)
                     total = page.totalCount
-                    offset += page.games.count
-                } while !loaded.isEmpty && offset < total
 
-                games = loaded.sorted {
-                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                    guard !page.games.isEmpty, loaded.count < total else {
+                        break
+                    }
+
+                    let nextOffset = offset + page.games.count
+                    guard nextOffset > offset else {
+                        break
+                    }
+                    offset = nextOffset
                 }
-                totalCount = total > 0 ? total : games.count
 
-                updateList()
+                var seen = Set<String>()
+                allGames = loaded
+                    .filter { seen.insert($0.id).inserted }
+                    .sorted {
+                        let order = $0.name.localizedCaseInsensitiveCompare($1.name)
+                        if order == .orderedSame {
+                            return $0.id.localizedStandardCompare($1.id) == .orderedAscending
+                        }
+                        return order == .orderedAscending
+                    }
+
+                totalCount = total > 0 ? total : allGames.count
+                applyFilter()
                 setBusy(false)
-                setStatus("\(games.count) games available in Hubcap.", tone: .ok)
+                setStatus(
+                    "Loaded \(allGames.count) of \(totalCount) games. Search is local and does not call the API.",
+                    tone: .ok
+                )
             } catch {
                 setBusy(false)
                 setStatus(error.localizedDescription, tone: .bad)
             }
+        }
+    }
+
+    private func applyFilter() {
+        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if query.isEmpty {
+            games = allGames
+            emptyLabel.stringValue = "No games returned by Hubcap."
+        } else if query.allSatisfy({ $0.isNumber }) {
+            games = allGames.filter { $0.id == query }
+            emptyLabel.stringValue = "No game matches App ID \(query)."
+        } else {
+            games = allGames.filter {
+                $0.name.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+            }
+            emptyLabel.stringValue = "No games match “\(query)”."
+        }
+
+        tableView.reloadData()
+        emptyLabel.isHidden = !games.isEmpty
+
+        guard !isBusy else { return }
+        if query.isEmpty {
+            setStatus("\(allGames.count) games available in Hubcap.", tone: .ok)
+        } else {
+            setStatus("\(games.count) match “\(query)”.", tone: .neutral)
         }
     }
 
@@ -351,6 +390,7 @@ final class HubcapViewController: NSViewController {
         guard !isBusy, let appID = game.appID, let key = currentKey() else { return }
 
         setBusy(true, status: "Downloading Lua for \(game.name)…")
+
         Task {
             var luaURL: URL?
             do {
@@ -377,47 +417,66 @@ final class HubcapViewController: NSViewController {
                 setBusy(false)
                 setStatus(error.localizedDescription, tone: .bad)
             }
-            if let luaURL { try? FileManager.default.removeItem(at: luaURL) }
+
+            if let luaURL {
+                try? FileManager.default.removeItem(at: luaURL)
+            }
         }
     }
 
     private func currentKey() -> String? {
+        let key = apiKeyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            setStatus("Enter your Hubcap API key to load the library.", tone: .neutral)
+            return nil
+        }
+
         do {
-            let key = try validatedKey()
-            if KeychainStore.read(account: keychainAccount) != key {
-                try KeychainStore.write(key, account: keychainAccount)
-            }
+            _ = try validatedKey()
             return key
         } catch {
-            if !isBusy { setStatus(error.localizedDescription, tone: .bad) }
+            if !isBusy {
+                setStatus(error.localizedDescription, tone: .bad)
+            }
             return nil
         }
     }
 
     private func validatedKey() throws -> String {
         let key = apiKeyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard key.range(of: #"^smm_[0-9a-f]{96}$"#, options: .regularExpression) != nil else {
+        guard key.range(
+            of: #"^smm_[0-9a-f]{96}$"#,
+            options: .regularExpression
+        ) != nil else {
             throw HubcapClientError.invalidAPIKey
         }
         return key
     }
 
+    private func usageText(_ stats: HubcapUserStats) -> String? {
+        guard let usage = stats.dailyUsage, let limit = stats.dailyLimit else {
+            return nil
+        }
+        return "Daily usage \(usage)/\(limit)."
+    }
+
     private func setBusy(_ busy: Bool, status: String? = nil) {
         isBusy = busy
         spinner.isHidden = !busy
+
         if busy {
             spinner.startAnimation(nil)
         } else {
             spinner.stopAnimation(nil)
         }
-        openHubcapButton.isEnabled = !busy
+
+        apiKeysButton.isEnabled = !busy
         saveKeyButton.isEnabled = !busy
         forgetKeyButton.isEnabled = !busy
         searchField.isEnabled = !busy
-        searchButton.isEnabled = !busy
-        clearSearchButton.isEnabled = !busy
         refreshButton.isEnabled = !busy
         tableView.isEnabled = !busy
+
         if let status {
             setStatus(status, tone: .neutral)
         }
@@ -427,13 +486,11 @@ final class HubcapViewController: NSViewController {
         statusLabel.stringValue = text
         statusLabel.textColor = tone.color
     }
+}
 
-    private func updateList() {
-        tableView.reloadData()
-        emptyLabel.isHidden = !games.isEmpty
-        emptyLabel.stringValue = searchField.stringValue.isEmpty
-            ? "No games returned by Hubcap."
-            : "No games match this search."
+extension HubcapViewController: NSSearchFieldDelegate {
+    func controlTextDidEndEditing(_ obj: Notification) {
+        applyFilter()
     }
 }
 
@@ -518,9 +575,8 @@ private final class HubcapGameCell: NSTableCellView {
 
     func configure(game: HubcapGame) {
         nameLabel.stringValue = game.name
-        idLabel.stringValue = "App ID (game.id)"
+        idLabel.stringValue = "App ID \(game.id)"
         installButton.isEnabled = game.appID != nil
-        onInstall = nil
     }
 
     @objc private func installPressed() {
