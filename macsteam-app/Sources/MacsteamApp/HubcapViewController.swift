@@ -214,7 +214,7 @@ final class HubcapViewController: NSViewController {
     }
 
     @objc private func openHubcap() {
-        NSWorkspace.shared.open(HubcapClient.apiKeysURL)
+        NSWorkspace.shared.open(HubcapClient.hubcapURL)
     }
 
     @objc private func saveKey() {
