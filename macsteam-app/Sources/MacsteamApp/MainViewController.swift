@@ -71,6 +71,7 @@ final class MainViewController: NSSplitViewController {
         addSplitViewItem(detailItem)
 
         super.loadView()
+        hubcapVC.startBackgroundDatabaseRefresh()
     }
 
     override func viewDidAppear() {
