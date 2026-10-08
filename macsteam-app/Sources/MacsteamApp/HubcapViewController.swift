@@ -1125,7 +1125,7 @@ private final class HubcapSettingsDialogController: NSObject {
     }
 
     func run() -> Result {
-        alert.window?.initialFirstResponder = keyField
+        alert.window.initialFirstResponder = keyField
 
         switch alert.runModal() {
         case .alertFirstButtonReturn:
