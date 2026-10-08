@@ -39,7 +39,7 @@ final class HubcapViewController: NSViewController {
         title.translatesAutoresizingMaskIntoConstraints = false
 
         let subtitle = NSTextField(labelWithString:
-            "Download Hubcap manifest packages and install their Lua configuration through macSteam."
+            "Download Lua manifests from Hubcap and install them through macSteam's existing parser and config path."
         )
         subtitle.font = Typography.body
         subtitle.textColor = Colors.secondaryText
@@ -47,10 +47,10 @@ final class HubcapViewController: NSViewController {
         subtitle.maximumNumberOfLines = 0
         subtitle.translatesAutoresizingMaskIntoConstraints = false
 
-        let authHeader = settingsGroupLabel("Discord access")
+        let authHeader = settingsGroupLabel("Authentication")
         let authCopy = NSTextField(labelWithString:
-            "Hubcap gates downloads through Discord. Sign in on Hubcap, generate an API key, "
-            + "then paste it below. macSteam stores the key in Keychain and never sends Discord credentials."
+            "Hubcap has two separate paths. Use Discord on the Hubcap website for account access; native API "
+            + "downloads use an API key generated from that account. macSteam stores only the API key in Keychain."
         )
         authCopy.font = Typography.caption
         authCopy.textColor = Colors.secondaryText
@@ -59,7 +59,7 @@ final class HubcapViewController: NSViewController {
         authCopy.translatesAutoresizingMaskIntoConstraints = false
 
         openHubcapButton = makeButton(
-            title: "Continue with Discord",
+            title: "Open Hubcap with Discord",
             target: self,
             action: #selector(openHubcap)
         )
@@ -101,7 +101,7 @@ final class HubcapViewController: NSViewController {
             authButtons.bottomAnchor.constraint(equalTo: authCard.bottomAnchor, constant: -14),
         ])
 
-        let appHeader = settingsGroupLabel("Manifest")
+        let appHeader = settingsGroupLabel("Lua manifest")
         appIDField = NSTextField()
         appIDField.placeholderString = "Steam App ID"
         appIDField.font = Typography.body
@@ -165,8 +165,8 @@ final class HubcapViewController: NSViewController {
         ])
 
         let note = NSTextField(labelWithString:
-            "The downloaded package is processed with the same Lua parser, depot-manifest "
-            + "cache, and config merge used by Import Apps."
+            "The downloaded Lua is processed with the same parser and config merge used by Import Apps. "
+            + "For depot .manifest files, use the full Hubcap manifest ZIP through Import Apps."
         )
         note.font = Typography.caption
         note.textColor = Colors.quiet
@@ -257,67 +257,39 @@ final class HubcapViewController: NSViewController {
     @objc private func downloadAndInstall() {
         guard !isBusy, let appID = validatedAppID(), let key = currentKey() else { return }
 
-        setBusy(true, status: "Downloading Hubcap manifest…")
+        setBusy(true, status: "Downloading Hubcap Lua…")
         Task {
-            var archive: URL?
-            var plans: [ImportPlan] = []
+            var luaURL: URL?
             do {
-                let downloaded = try await client.downloadManifestZip(appID: appID, apiKey: key)
-                archive = downloaded
-                setStatus("Reading Lua and depot manifests…", tone: .neutral)
+                let downloaded = try await client.downloadLua(appID: appID, apiKey: key)
+                luaURL = downloaded
+                setStatus("Parsing Lua manifest…", tone: .neutral)
 
-                plans = try await Task.detached(priority: .userInitiated) {
-                    try ZipImporter.buildPlans(from: downloaded)
+                let plan = try await Task.detached(priority: .userInitiated) {
+                    try ZipImporter.buildPlan(fromLua: downloaded)
                 }.value
 
-                guard plans.contains(where: { $0.mainAppID == appID }) else {
+                guard plan.mainAppID == appID else {
                     throw HubcapInstallError.appIDMismatch(requested: appID)
                 }
 
-                let selected = plans.filter { $0.mainAppID == appID }
-                let manifests = selected.flatMap(\.manifestFiles)
-                if !manifests.isEmpty {
-                    setStatus("Installing depot manifests…", tone: .neutral)
-                    try await Task.detached(priority: .userInitiated) {
-                        _ = try ZipImporter.copyManifests(manifests)
-                    }.value
+                try store.mutate { cfg in
+                    _ = ZipImporter.merge(plan, into: &cfg)
                 }
-
-                do {
-                    try store.mutate { cfg in
-                        for plan in selected {
-                            _ = ZipImporter.merge(plan, into: &cfg)
-                        }
-                    }
-                } catch {
-                    if !manifests.isEmpty {
-                        Task.detached {
-                            ZipImporter.removeCopiedManifests(manifests)
-                        }
-                    }
-                    throw error
-                }
-
-                for plan in plans {
-                    ZipImporter.cleanup(plan.extractDir)
-                }
-                if let archive { try? FileManager.default.removeItem(at: archive) }
 
                 onConfigChanged()
                 setBusy(false)
-                let dlcCount = selected.reduce(0) { $0 + $1.dlcAppIDs.count }
+                let dlcCount = plan.dlcAppIDs.count
                 let detail = dlcCount > 0
-                    ? "App \(appID) installed with \(dlcCount) DLC entries."
-                    : "App \(appID) installed."
+                    ? "App \\(appID) installed with \\(dlcCount) DLC entries."
+                    : "App \\(appID) installed."
                 setStatus(detail, tone: .ok)
             } catch {
-                for plan in plans {
-                    ZipImporter.cleanup(plan.extractDir)
-                }
-                if let archive { try? FileManager.default.removeItem(at: archive) }
+                if let luaURL { try? FileManager.default.removeItem(at: luaURL) }
                 setBusy(false)
                 setStatus(error.localizedDescription, tone: .bad)
             }
+            if let luaURL { try? FileManager.default.removeItem(at: luaURL) }
         }
     }
 
@@ -336,7 +308,7 @@ final class HubcapViewController: NSViewController {
 
     private func validatedKey() throws -> String {
         let key = apiKeyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard key.hasPrefix("smm_"), key.count >= 20 else {
+        guard key.range(of: #"^smm_[0-9a-f]{96}$"#, options: .regularExpression) != nil else {
             throw HubcapClientError.invalidAPIKey
         }
         return key
