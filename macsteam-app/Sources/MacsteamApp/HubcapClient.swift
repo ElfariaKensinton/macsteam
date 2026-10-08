@@ -20,6 +20,7 @@ enum HubcapClientError: LocalizedError {
     case unavailable
     case http(Int)
     case invalidResponse(endpoint: String)
+    case invalidLuaResponse(appID: Int, preview: String)
 
     var errorDescription: String? {
         switch self {
@@ -37,6 +38,8 @@ enum HubcapClientError: LocalizedError {
             return "Hubcap returned HTTP \(status)."
         case .invalidResponse(let endpoint):
             return "Hubcap returned an unexpected response from \(endpoint)."
+        case .invalidLuaResponse(let appID, let preview):
+            return "Hubcap returned invalid Lua for App \(appID). Response starts with: \(preview)"
         }
     }
 }
@@ -102,7 +105,7 @@ final class HubcapClient: @unchecked Sendable {
         return try decodeLibraryPage(data)
     }
 
-    func downloadLua(appID: Int, apiKey: String) async throws -> URL {
+    func downloadLuaText(appID: Int, apiKey: String) async throws -> String {
         let request = try makeRequest(
             url: baseURL.appendingPathComponent("/api/v1/lua/\(appID)"),
             apiKey: apiKey,
@@ -115,10 +118,26 @@ final class HubcapClient: @unchecked Sendable {
             throw HubcapClientError.unavailable
         }
 
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("hubcap-\(appID)-\(UUID().uuidString).lua")
-        try data.write(to: tempURL, options: .atomic)
-        return tempURL
+        // Hubcap returns the Lua script as the response body. Decode the body directly instead of
+        // round-tripping it through a temporary .lua file and Foundation's file-format detection.
+        var text = String(decoding: data, as: UTF8.self)
+        if text.unicodeScalars.first == "\u{FEFF}" {
+            text.removeFirst()
+        }
+
+        guard LuaManifestParser.containsAddApp(text) else {
+            throw HubcapClientError.invalidLuaResponse(appID: appID, preview: preview(of: text))
+        }
+
+        return text
+    }
+
+    private func preview(of text: String) -> String {
+        let compact = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return String(compact.prefix(120))
     }
 
     private func makeRequest(url: URL, apiKey: String, accept: String) throws -> URLRequest {
