@@ -29,6 +29,15 @@ struct HubcapLibraryPage: Sendable {
     let games: [HubcapGame]
 }
 
+private struct SteamAppDetailsEnvelope: Decodable {
+    let success: Bool
+    let data: SteamAppDetails?
+}
+
+private struct SteamAppDetails: Decodable {
+    let name: String?
+}
+
 private struct HubcapLibraryGame: Decodable {
     let gameID: String
     let gameName: String?
@@ -219,6 +228,43 @@ final class HubcapClient: @unchecked Sendable {
         }
     }
 
+
+    func steamAppName(appID: Int) async -> String? {
+        var components = URLComponents(
+            url: URL(string: "https://store.steampowered.com/api/appdetails")!,
+            resolvingAgainstBaseURL: false
+        )!
+        components.queryItems = [
+            URLQueryItem(name: "appids", value: String(appID)),
+            URLQueryItem(name: "l", value: "english"),
+        ]
+
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("macSteam Hubcap Client", forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 15
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard
+                let http = response as? HTTPURLResponse,
+                (200...299).contains(http.statusCode)
+            else {
+                return nil
+            }
+
+            let payload = try JSONDecoder().decode([String: SteamAppDetailsEnvelope].self, from: data)
+            guard let details = payload[String(appID)], details.success else {
+                return nil
+            }
+
+            let name = details.data?.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return name?.isEmpty == false ? name : nil
+        } catch {
+            return nil
+        }
+    }
 
     func downloadLuaText(appID: Int, apiKey: String) async throws -> String {
         let request = try makeRequest(
