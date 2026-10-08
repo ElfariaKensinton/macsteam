@@ -246,20 +246,11 @@ final class HubcapClient: @unchecked Sendable {
 
 
     func userStats(apiKey: String) async throws -> HubcapUserStats {
-        var components = URLComponents(
+        let request = try makeRequest(
             url: baseURL.appendingPathComponent("/api/v1/user/stats"),
-            resolvingAgainstBaseURL: false
-        )!
-        components.queryItems = [
-            URLQueryItem(name: "api_key", value: apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
-        ]
-
-        var request = URLRequest(url: components.url!)
-        request.httpMethod = "GET"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("macSteam Hubcap Client", forHTTPHeaderField: "User-Agent")
-        request.timeoutInterval = 30
-
+            apiKey: apiKey,
+            accept: "application/json"
+        )
         let (data, response) = try await session.data(for: request)
         try validate(response)
 
