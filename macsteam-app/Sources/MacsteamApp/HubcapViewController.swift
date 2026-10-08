@@ -164,9 +164,11 @@ final class HubcapViewController: NSViewController {
             emptyLabel.trailingAnchor.constraint(lessThanOrEqualTo: tableContainer.trailingAnchor, constant: -20),
         ])
 
-        statusLabel = NSTextField(labelWithString: "Enter your Hubcap API key to load the library.")
+        statusLabel = NSTextField(wrappingLabelWithString: "Enter your Hubcap API key to load the library.")
         statusLabel.font = Typography.caption
         statusLabel.textColor = Colors.secondaryText
+        statusLabel.isSelectable = true
+        statusLabel.allowsEditingTextAttributes = false
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
         spinner = NSProgressIndicator()
