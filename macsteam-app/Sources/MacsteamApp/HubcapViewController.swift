@@ -396,9 +396,16 @@ final class HubcapViewController: NSViewController {
         ])
 
         alert.accessoryView = container
-        alert.addButton(withTitle: "Connect")
-        alert.addButton(withTitle: "Disconnect")
-        alert.addButton(withTitle: "Cancel")
+
+        let connectButton = alert.addButton(withTitle: "Connect")
+        let disconnectButton = alert.addButton(withTitle: "Disconnect")
+        let cancelButton = alert.addButton(withTitle: "Cancel")
+
+        styleAlertButton(connectButton, width: 78, role: .primary)
+        styleAlertButton(disconnectButton, width: 94, role: .destructive)
+        styleAlertButton(cancelButton, width: 72, role: .secondary)
+
+        alert.window.initialFirstResponder = keyField
 
         switch alert.runModal() {
         case .alertFirstButtonReturn:
@@ -729,6 +736,29 @@ final class HubcapViewController: NSViewController {
         card.translatesAutoresizingMaskIntoConstraints = false
         card.applyCardSurface()
         return card
+    }
+
+    private enum AlertButtonRole {
+        case primary
+        case secondary
+        case destructive
+    }
+
+    private func styleAlertButton(_ button: NSButton, width: CGFloat, role: AlertButtonRole) {
+        button.bezelStyle = .rounded
+        button.controlSize = .small
+        button.font = .systemFont(ofSize: 13, weight: role == .primary ? .semibold : .medium)
+        button.alignment = .center
+        button.frame.size.width = width
+
+        switch role {
+        case .primary:
+            button.contentTintColor = .controlAccentColor
+        case .secondary:
+            button.contentTintColor = .labelColor
+        case .destructive:
+            button.contentTintColor = .systemRed
+        }
     }
 
     private func stylePrimaryButton(_ button: NSButton) {
