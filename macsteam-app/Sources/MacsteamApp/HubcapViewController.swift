@@ -316,7 +316,7 @@ final class HubcapViewController: NSViewController {
                 while true {
                     let page = try await client.libraryPage(
                         apiKey: key,
-                        limit: 100,
+                        limit: 1000,
                         offset: offset
                     )
 
@@ -349,7 +349,7 @@ final class HubcapViewController: NSViewController {
                 applyFilter()
                 setBusy(false)
                 setStatus(
-                    "Loaded \(allGames.count) of \(totalCount) games. Search is local and does not call the API.",
+                    "Loaded \(allGames.count) games. Search is local and does not call the API.",
                     tone: .ok
                 )
             } catch {
