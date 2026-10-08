@@ -11,15 +11,15 @@ enum HubcapClientError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidAPIKey:
-            return "Hubcap rejected the API key. Sign in with Discord on Hubcap and generate a new key."
+            return "Hubcap rejected the API key. Sign in on the Hubcap website with Discord and generate a new key."
         case .invalidAppID:
             return "Enter a valid Steam App ID."
         case .unauthorized:
-            return "Hubcap requires Discord-authorized access. Check the API key saved in macSteam."
+            return "The Hubcap API requires an API key. Discord sign-in is the separate Hubcap website account flow."
         case .rateLimited:
             return "Hubcap's download limit for this key has been reached. Try again later or use another authorized key."
         case .unavailable:
-            return "Hubcap doesn't have a manifest for this App ID."
+            return "Hubcap doesn't have a Lua manifest for this App ID."
         case .http(let status):
             return "Hubcap returned HTTP \(status)."
         }
@@ -42,20 +42,20 @@ final class HubcapClient: @unchecked Sendable {
         try validate(response, allowNotFound: true)
     }
 
-    func downloadManifestZip(appID: Int, apiKey: String) async throws -> URL {
-        let request = try makeRequest(path: "/api/v1/manifest/\(appID)", apiKey: apiKey)
+    func downloadLua(appID: Int, apiKey: String) async throws -> URL {
+        let request = try makeRequest(path: "/api/v1/lua/\\(appID)", apiKey: apiKey)
         let (data, response) = try await session.data(for: request)
         try validate(response)
 
         let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("hubcap-\(appID)-\(UUID().uuidString).zip")
+            .appendingPathComponent("hubcap-\\(appID)-\\(UUID().uuidString).lua")
         try data.write(to: tempURL, options: .atomic)
         return tempURL
     }
 
     private func makeRequest(path: String, apiKey: String) throws -> URLRequest {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard key.hasPrefix("smm_"), key.count >= 20 else {
+        guard key.range(of: #"^smm_[0-9a-f]{96}$"#, options: .regularExpression) != nil else {
             throw HubcapClientError.invalidAPIKey
         }
         guard let url = URL(string: path, relativeTo: baseURL) else {
