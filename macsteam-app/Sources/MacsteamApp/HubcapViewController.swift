@@ -1054,55 +1054,19 @@ private final class HubcapSettingsDialogController: NSObject {
     }
 
     private let openAPIKeys: () -> Void
-    private let window: NSWindow
     private let keyField = NSSecureTextField()
-    private let connectButton: NSButton
-    private let disconnectButton: NSButton
-    private let cancelButton: NSButton
-    private var result: Result = .cancel
+    private let alert = NSAlert()
+    private var connectButton: NSButton!
+    private var disconnectButton: NSButton!
+    private var cancelButton: NSButton!
 
     init(apiKey: String?, openAPIKeys: @escaping () -> Void) {
         self.openAPIKeys = openAPIKeys
-        self.window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 220),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        self.connectButton = NSButton(
-            title: "Connect",
-            target: nil,
-            action: nil
-        )
-        self.disconnectButton = NSButton(
-            title: "Disconnect",
-            target: nil,
-            action: nil
-        )
-        self.cancelButton = NSButton(
-            title: "Cancel",
-            target: nil,
-            action: nil
-        )
-
         super.init()
 
-        window.title = "Connect to Hubcap"
-        window.isReleasedWhenClosed = false
-        window.hasShadow = true
-
-        let contentView = NSView()
-        contentView.translatesAutoresizingMaskIntoConstraints = false
-        window.contentView = contentView
-
-        let messageLabel = NSTextField(labelWithString: "Connect to Hubcap")
-        messageLabel.font = .systemFont(ofSize: 15, weight: .semibold)
-        messageLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        let informativeLabel = NSTextField(
-            wrappingLabelWithString: "Enter your Hubcap API key to browse and install manifests."
-        )
-        informativeLabel.translatesAutoresizingMaskIntoConstraints = false
+        alert.alertStyle = .informational
+        alert.messageText = "Connect to Hubcap"
+        alert.informativeText = "Enter your Hubcap API key to browse and install manifests."
 
         keyField.stringValue = apiKey ?? ""
         keyField.placeholderString = "Hubcap API key"
@@ -1131,88 +1095,55 @@ private final class HubcapSettingsDialogController: NSObject {
         helper.textColor = .secondaryLabelColor
         helper.translatesAutoresizingMaskIntoConstraints = false
 
-        connectButton.target = self
-        connectButton.action = #selector(connectPressed)
-        connectButton.translatesAutoresizingMaskIntoConstraints = false
-
-        disconnectButton.target = self
-        disconnectButton.action = #selector(disconnectPressed)
-        disconnectButton.isEnabled = apiKey != nil && !(apiKey?.isEmpty ?? true)
-        disconnectButton.translatesAutoresizingMaskIntoConstraints = false
-
-        cancelButton.target = self
-        cancelButton.action = #selector(cancelPressed)
-        cancelButton.translatesAutoresizingMaskIntoConstraints = false
-
-        // Keep every button's AppKit defaults. The stack is the only layout mechanism.
-        let responseButtons = NSStackView(views: [connectButton, disconnectButton, cancelButton])
-        responseButtons.orientation = .horizontal
-        responseButtons.alignment = .centerY
-        responseButtons.spacing = 8
-        responseButtons.translatesAutoresizingMaskIntoConstraints = false
-        responseButtons.setContentHuggingPriority(.required, for: .horizontal)
-        responseButtons.setContentCompressionResistancePriority(.required, for: .horizontal)
-
-        contentView.addSubview(messageLabel)
-        contentView.addSubview(informativeLabel)
-        contentView.addSubview(keyRow)
-        contentView.addSubview(helper)
-        contentView.addSubview(responseButtons)
+        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 66))
+        accessory.addSubview(keyRow)
+        accessory.addSubview(helper)
 
         NSLayoutConstraint.activate([
-            messageLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 22),
-            messageLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
-            messageLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24),
-
-            informativeLabel.topAnchor.constraint(equalTo: messageLabel.bottomAnchor, constant: 6),
-            informativeLabel.leadingAnchor.constraint(equalTo: messageLabel.leadingAnchor),
-            informativeLabel.trailingAnchor.constraint(equalTo: messageLabel.trailingAnchor),
-
-            keyRow.topAnchor.constraint(equalTo: informativeLabel.bottomAnchor, constant: 18),
-            keyRow.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
-            keyRow.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24),
+            keyRow.topAnchor.constraint(equalTo: accessory.topAnchor),
+            keyRow.leadingAnchor.constraint(equalTo: accessory.leadingAnchor),
+            keyRow.trailingAnchor.constraint(equalTo: accessory.trailingAnchor),
             keyRow.heightAnchor.constraint(equalToConstant: 32),
 
             helper.topAnchor.constraint(equalTo: keyRow.bottomAnchor, constant: 8),
-            helper.leadingAnchor.constraint(equalTo: keyRow.leadingAnchor),
-            helper.trailingAnchor.constraint(equalTo: keyRow.trailingAnchor),
-
-            responseButtons.topAnchor.constraint(equalTo: helper.bottomAnchor, constant: 18),
-            responseButtons.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24),
-            responseButtons.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -18),
+            helper.leadingAnchor.constraint(equalTo: accessory.leadingAnchor),
+            helper.trailingAnchor.constraint(equalTo: accessory.trailingAnchor),
+            helper.bottomAnchor.constraint(equalTo: accessory.bottomAnchor),
         ])
 
-        window.initialFirstResponder = keyField
+        alert.accessoryView = accessory
+
+        // NSAlert places the first-added native button on the trailing edge.
+        // Add in reverse visual order to get: Connect | Disconnect | Cancel.
+        cancelButton = alert.addButton(withTitle: "Cancel")
+        disconnectButton = alert.addButton(withTitle: "Disconnect")
+        connectButton = alert.addButton(withTitle: "Connect")
+
+        disconnectButton.isEnabled = apiKey != nil && !(apiKey?.isEmpty ?? true)
+        connectButton.keyEquivalent = "\r"
     }
 
     func run() -> Result {
-        result = .cancel
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        NSApp.runModal(for: window)
-        window.orderOut(nil)
-        return result
-    }
+        alert.window.initialFirstResponder = keyField
+        alert.layout()
 
-    @objc private func connectPressed() {
-        result = .connect(keyField.stringValue)
-        NSApp.stopModal()
-    }
-
-    @objc private func disconnectPressed() {
-        result = .disconnect
-        NSApp.stopModal()
-    }
-
-    @objc private func cancelPressed() {
-        result = .cancel
-        NSApp.stopModal()
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return .cancel
+        case .alertSecondButtonReturn:
+            return .disconnect
+        case .alertThirdButtonReturn:
+            return .connect(keyField.stringValue)
+        default:
+            return .cancel
+        }
     }
 
     @objc private func openAPIKeysPressed() {
         openAPIKeys()
     }
 }
+
 
 private enum HubcapInstallError: LocalizedError {
     case appIDMismatch(requested: Int)
