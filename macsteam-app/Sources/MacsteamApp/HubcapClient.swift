@@ -140,34 +140,6 @@ enum HubcapClientError: LocalizedError {
     }
 }
 
-private struct HubcapSearchGame: Decodable {
-    let gameID: String
-    let gameName: String?
-
-    enum CodingKeys: String, CodingKey {
-        case gameID = "game_id"
-        case gameName = "game_name"
-    }
-
-    var model: HubcapGame {
-        let trimmed = gameName?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return HubcapGame(
-            id: gameID,
-            name: (trimmed?.isEmpty == false) ? trimmed! : "App \(gameID)"
-        )
-    }
-}
-
-private struct HubcapSearchResponse: Decodable {
-    let status: String
-    let results: [HubcapSearchGame]
-
-    enum CodingKeys: String, CodingKey {
-        case status
-        case results
-    }
-}
-
 final class HubcapClient: @unchecked Sendable {
     static let apiKeysURL = URL(string: "https://hubcapmanifest.com/api-keys/")!
 
@@ -176,35 +148,6 @@ final class HubcapClient: @unchecked Sendable {
 
     init(session: URLSession = .shared) {
         self.session = session
-    }
-
-    func allGames(apiKey: String) async throws -> [HubcapGame] {
-        var offset = 0
-        var all: [HubcapGame] = []
-
-        while true {
-            let page = try await libraryPage(
-                apiKey: apiKey,
-                limit: 1000,
-                offset: offset
-            )
-            all.append(contentsOf: page.games)
-
-            if page.games.isEmpty || all.count >= page.totalCount {
-                break
-            }
-
-            let nextOffset = offset + page.games.count
-            guard nextOffset > offset else {
-                throw HubcapClientError.invalidResponse(
-                    endpoint: "/api/v1/library",
-                    preview: "pagination did not advance"
-                )
-            }
-            offset = nextOffset
-        }
-
-        return all
     }
 
     func libraryPage(apiKey: String, limit: Int = 1000, offset: Int = 0) async throws -> HubcapLibraryPage {
