@@ -1056,6 +1056,7 @@ private final class HubcapSettingsDialogController: NSObject {
     private let openAPIKeys: () -> Void
     private let keyField = NSSecureTextField()
     private let alert = NSAlert()
+    private var result: Result = .cancel
 
     init(apiKey: String?, openAPIKeys: @escaping () -> Void) {
         self.openAPIKeys = openAPIKeys
@@ -1071,6 +1072,8 @@ private final class HubcapSettingsDialogController: NSObject {
         keyField.controlSize = .large
         keyField.translatesAutoresizingMaskIntoConstraints = false
         keyField.setAccessibilityLabel("Hubcap API key")
+        keyField.target = self
+        keyField.action = #selector(connectPressed)
 
         let getKeyButton = NSButton(
             title: "Get API key",
@@ -1078,17 +1081,12 @@ private final class HubcapSettingsDialogController: NSObject {
             action: #selector(openAPIKeysPressed)
         )
         getKeyButton.bezelStyle = .rounded
-        getKeyButton.controlSize = .large
-        getKeyButton.font = .systemFont(ofSize: 13, weight: .medium)
+        getKeyButton.controlSize = .small
+        getKeyButton.font = .systemFont(ofSize: 12, weight: .medium)
         getKeyButton.contentTintColor = .controlAccentColor
         getKeyButton.translatesAutoresizingMaskIntoConstraints = false
-        getKeyButton.widthAnchor.constraint(equalToConstant: 108).isActive = true
-        getKeyButton.heightAnchor.constraint(equalToConstant: 32).isActive = true
-
-        let helper = NSTextField(labelWithString: "Stored locally by macSteam.")
-        helper.font = .systemFont(ofSize: 11)
-        helper.textColor = .secondaryLabelColor
-        helper.translatesAutoresizingMaskIntoConstraints = false
+        getKeyButton.widthAnchor.constraint(equalToConstant: 100).isActive = true
+        getKeyButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
 
         let keyRow = NSStackView(views: [keyField, getKeyButton])
         keyRow.orientation = .horizontal
@@ -1098,9 +1096,40 @@ private final class HubcapSettingsDialogController: NSObject {
         keyField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         keyField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 66))
+        let helper = NSTextField(labelWithString: "Stored locally by macSteam.")
+        helper.font = .systemFont(ofSize: 11)
+        helper.textColor = .secondaryLabelColor
+        helper.translatesAutoresizingMaskIntoConstraints = false
+
+        let connectButton = makeActionButton(
+            title: "Connect",
+            role: .primary,
+            action: #selector(connectPressed),
+            width: 76
+        )
+        let disconnectButton = makeActionButton(
+            title: "Disconnect",
+            role: .destructive,
+            action: #selector(disconnectPressed),
+            width: 92
+        )
+        let cancelButton = makeActionButton(
+            title: "Cancel",
+            role: .secondary,
+            action: #selector(cancelPressed),
+            width: 68
+        )
+
+        let actions = NSStackView(views: [connectButton, disconnectButton, cancelButton])
+        actions.orientation = .horizontal
+        actions.alignment = .centerY
+        actions.spacing = 6
+        actions.translatesAutoresizingMaskIntoConstraints = false
+
+        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 104))
         accessory.addSubview(keyRow)
         accessory.addSubview(helper)
+        accessory.addSubview(actions)
 
         NSLayoutConstraint.activate([
             keyRow.topAnchor.constraint(equalTo: accessory.topAnchor),
@@ -1108,52 +1137,81 @@ private final class HubcapSettingsDialogController: NSObject {
             keyRow.trailingAnchor.constraint(equalTo: accessory.trailingAnchor),
             keyRow.heightAnchor.constraint(equalToConstant: 32),
 
-            helper.topAnchor.constraint(equalTo: keyRow.bottomAnchor, constant: 8),
+            helper.topAnchor.constraint(equalTo: keyRow.bottomAnchor, constant: 7),
             helper.leadingAnchor.constraint(equalTo: accessory.leadingAnchor),
             helper.trailingAnchor.constraint(equalTo: accessory.trailingAnchor),
-            helper.bottomAnchor.constraint(equalTo: accessory.bottomAnchor),
+
+            actions.trailingAnchor.constraint(equalTo: accessory.trailingAnchor),
+            actions.bottomAnchor.constraint(equalTo: accessory.bottomAnchor),
+            actions.topAnchor.constraint(equalTo: helper.bottomAnchor, constant: 16),
         ])
 
         alert.accessoryView = accessory
-        alert.addButton(withTitle: "Connect")
-        alert.addButton(withTitle: "Disconnect")
-        alert.addButton(withTitle: "Cancel")
-
-        let buttons = alert.buttons
-        buttons[0].keyEquivalent = "\r"
-        buttons[2].keyEquivalent = "\u{1b}"
-        buttons[1].isEnabled = apiKey != nil && !(apiKey?.isEmpty ?? true)
-
-        // Keep the three actions compact; NSAlert lays its button bar out at the trailing edge.
-        let widths: [CGFloat] = [76, 92, 68]
-        for (button, width) in zip(buttons, widths) {
-            button.controlSize = .small
-            button.translatesAutoresizingMaskIntoConstraints = false
-            button.setContentHuggingPriority(.required, for: .horizontal)
-            button.setContentCompressionResistancePriority(.required, for: .horizontal)
-            button.widthAnchor.constraint(equalToConstant: width).isActive = true
-        }
     }
 
     func run() -> Result {
+        result = .cancel
         alert.window.initialFirstResponder = keyField
+        _ = alert.runModal()
+        return result
+    }
 
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
-            return .connect(keyField.stringValue)
-        case .alertSecondButtonReturn:
-            return .disconnect
-        case .alertThirdButtonReturn:
-            return .cancel
-        default:
-            return .cancel
-        }
+    private func finish(_ value: Result) {
+        result = value
+        NSApp.abortModal()
+        alert.window.orderOut(nil)
     }
 
     @objc private func openAPIKeysPressed() {
         openAPIKeys()
     }
+
+    @objc private func connectPressed() {
+        finish(.connect(keyField.stringValue))
+    }
+
+    @objc private func disconnectPressed() {
+        finish(.disconnect)
+    }
+
+    @objc private func cancelPressed() {
+        finish(.cancel)
+    }
+
+    private enum Role {
+        case primary
+        case secondary
+        case destructive
+    }
+
+    private func makeActionButton(
+        title: String,
+        role: Role,
+        action: Selector,
+        width: CGFloat
+    ) -> NSButton {
+        let button = NSButton(title: title, target: self, action: action)
+        button.bezelStyle = .rounded
+        button.controlSize = .small
+        button.font = .systemFont(
+            ofSize: 12,
+            weight: role == .primary ? .semibold : .medium
+        )
+        button.alignment = .center
+        button.contentTintColor = {
+            switch role {
+            case .primary: return .controlAccentColor
+            case .secondary: return .labelColor
+            case .destructive: return .systemRed
+            }
+        }()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.widthAnchor.constraint(equalToConstant: width).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 26).isActive = true
+        return button
+    }
 }
+
 
 private enum HubcapInstallError: LocalizedError {
     case appIDMismatch(requested: Int)
