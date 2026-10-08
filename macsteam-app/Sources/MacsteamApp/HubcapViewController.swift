@@ -1056,7 +1056,6 @@ private final class HubcapSettingsDialogController: NSObject {
     private let openAPIKeys: () -> Void
     private let keyField = NSSecureTextField()
     private let alert = NSAlert()
-    private var result: Result = .cancel
 
     init(apiKey: String?, openAPIKeys: @escaping () -> Void) {
         self.openAPIKeys = openAPIKeys
@@ -1072,21 +1071,13 @@ private final class HubcapSettingsDialogController: NSObject {
         keyField.controlSize = .large
         keyField.translatesAutoresizingMaskIntoConstraints = false
         keyField.setAccessibilityLabel("Hubcap API key")
-        keyField.target = self
-        keyField.action = #selector(connectPressed)
 
         let getKeyButton = NSButton(
             title: "Get API key",
             target: self,
             action: #selector(openAPIKeysPressed)
         )
-        getKeyButton.bezelStyle = .rounded
-        getKeyButton.controlSize = .small
-        getKeyButton.font = .systemFont(ofSize: 12, weight: .medium)
-        getKeyButton.contentTintColor = .controlAccentColor
         getKeyButton.translatesAutoresizingMaskIntoConstraints = false
-        getKeyButton.widthAnchor.constraint(equalToConstant: 100).isActive = true
-        getKeyButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
 
         let keyRow = NSStackView(views: [keyField, getKeyButton])
         keyRow.orientation = .horizontal
@@ -1101,35 +1092,9 @@ private final class HubcapSettingsDialogController: NSObject {
         helper.textColor = .secondaryLabelColor
         helper.translatesAutoresizingMaskIntoConstraints = false
 
-        let connectButton = makeActionButton(
-            title: "Connect",
-            role: .primary,
-            action: #selector(connectPressed),
-            width: 76
-        )
-        let disconnectButton = makeActionButton(
-            title: "Disconnect",
-            role: .destructive,
-            action: #selector(disconnectPressed),
-            width: 92
-        )
-        let cancelButton = makeActionButton(
-            title: "Cancel",
-            role: .secondary,
-            action: #selector(cancelPressed),
-            width: 68
-        )
-
-        let actions = NSStackView(views: [connectButton, disconnectButton, cancelButton])
-        actions.orientation = .horizontal
-        actions.alignment = .centerY
-        actions.spacing = 6
-        actions.translatesAutoresizingMaskIntoConstraints = false
-
-        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 104))
+        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 66))
         accessory.addSubview(keyRow)
         accessory.addSubview(helper)
-        accessory.addSubview(actions)
 
         NSLayoutConstraint.activate([
             keyRow.topAnchor.constraint(equalTo: accessory.topAnchor),
@@ -1137,78 +1102,42 @@ private final class HubcapSettingsDialogController: NSObject {
             keyRow.trailingAnchor.constraint(equalTo: accessory.trailingAnchor),
             keyRow.heightAnchor.constraint(equalToConstant: 32),
 
-            helper.topAnchor.constraint(equalTo: keyRow.bottomAnchor, constant: 7),
+            helper.topAnchor.constraint(equalTo: keyRow.bottomAnchor, constant: 8),
             helper.leadingAnchor.constraint(equalTo: accessory.leadingAnchor),
             helper.trailingAnchor.constraint(equalTo: accessory.trailingAnchor),
-
-            actions.trailingAnchor.constraint(equalTo: accessory.trailingAnchor),
-            actions.bottomAnchor.constraint(equalTo: accessory.bottomAnchor),
-            actions.topAnchor.constraint(equalTo: helper.bottomAnchor, constant: 16),
+            helper.bottomAnchor.constraint(equalTo: accessory.bottomAnchor),
         ])
 
         alert.accessoryView = accessory
+
+        // NSAlert automatically adds an OK button if no response buttons are provided.
+        // Add exactly the three actions this dialog needs; AppKit keeps them together at bottom-right.
+        alert.addButton(withTitle: "Connect")
+        alert.addButton(withTitle: "Disconnect")
+        alert.addButton(withTitle: "Cancel")
+
+        alert.buttons[0].keyEquivalent = "\r"
+        alert.buttons[1].isEnabled = apiKey != nil && !(apiKey?.isEmpty ?? true)
+        alert.buttons[2].keyEquivalent = "\u{1b}"
     }
 
     func run() -> Result {
-        result = .cancel
         alert.window.initialFirstResponder = keyField
-        _ = alert.runModal()
-        return result
-    }
 
-    private func finish(_ value: Result) {
-        result = value
-        NSApp.abortModal()
-        alert.window.orderOut(nil)
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return .connect(keyField.stringValue)
+        case .alertSecondButtonReturn:
+            return .disconnect
+        case .alertThirdButtonReturn:
+            return .cancel
+        default:
+            return .cancel
+        }
     }
 
     @objc private func openAPIKeysPressed() {
         openAPIKeys()
-    }
-
-    @objc private func connectPressed() {
-        finish(.connect(keyField.stringValue))
-    }
-
-    @objc private func disconnectPressed() {
-        finish(.disconnect)
-    }
-
-    @objc private func cancelPressed() {
-        finish(.cancel)
-    }
-
-    private enum Role {
-        case primary
-        case secondary
-        case destructive
-    }
-
-    private func makeActionButton(
-        title: String,
-        role: Role,
-        action: Selector,
-        width: CGFloat
-    ) -> NSButton {
-        let button = NSButton(title: title, target: self, action: action)
-        button.bezelStyle = .rounded
-        button.controlSize = .small
-        button.font = .systemFont(
-            ofSize: 12,
-            weight: role == .primary ? .semibold : .medium
-        )
-        button.alignment = .center
-        button.contentTintColor = {
-            switch role {
-            case .primary: return .controlAccentColor
-            case .secondary: return .labelColor
-            case .destructive: return .systemRed
-            }
-        }()
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.widthAnchor.constraint(equalToConstant: width).isActive = true
-        button.heightAnchor.constraint(equalToConstant: 26).isActive = true
-        return button
     }
 }
 
