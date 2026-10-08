@@ -375,7 +375,8 @@ final class HubcapViewController: NSViewController {
         if allGames.isEmpty {
             loadLibrary(reset: true)
         } else {
-            applyScopeAndReload()
+            games = allGames
+            tableView.reloadData()
             scheduleSearch()
         }
     }
@@ -587,15 +588,14 @@ final class HubcapViewController: NSViewController {
                 "Showing (allGames.count) of (totalCount). Search Hubcap or browse the loaded library.",
                 tone: .ok
             )
-            resultCountLabel.stringValue = resultCountLabelForScope()
+            resultCountLabel.stringValue = "(games.count) shown"
         } else {
             setStatus("Loaded all (allGames.count) Hubcap games.", tone: .ok)
-            resultCountLabel.stringValue = resultCountLabelForScope()
+            resultCountLabel.stringValue = "(games.count) shown"
         }
 
         loadMoreButton.isEnabled =
             !isBusy &&
-            scopeControl.selectedSegment == 0 &&
             searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             loadedOffset < totalCount
     }
@@ -716,15 +716,6 @@ final class HubcapViewController: NSViewController {
         return "\(count) result(s)"
     }
 
-    private func resultCountLabelForScope() -> String {
-        let installedOnly = scopeControl.selectedSegment == 1
-        if installedOnly {
-            let installedVisible = games.count
-            return "\(installedVisible) installed"
-        }
-        return games.isEmpty ? "No games" : "\(games.count) shown"
-    }
-
     private func updateEmptyState() {
         emptyState.isHidden = !games.isEmpty
     }
@@ -765,7 +756,6 @@ final class HubcapViewController: NSViewController {
         saveKeyButton.isEnabled = !busy
         forgetKeyButton.isEnabled = !busy
         searchField.isEnabled = true
-        scopeControl.isEnabled = !busy
         refreshButton.isEnabled = !busy
         tableView.isEnabled = !busy
 
