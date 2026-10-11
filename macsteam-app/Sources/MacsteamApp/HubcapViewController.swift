@@ -388,6 +388,11 @@ final class HubcapViewController: NSViewController {
                 totalCount = 0
                 loadedOffset = 0
                 tableView.reloadData()
+                emptyState.configure(
+                    symbol: "key",
+                    prompt: "Connect to Hubcap",
+                    hint: "Add an API key in Hubcap Settings to search the catalog."
+                )
                 updateEmptyState()
                 loadMoreButton.isEnabled = false
                 resultCountLabel.stringValue = "Ready to connect"
@@ -456,6 +461,19 @@ final class HubcapViewController: NSViewController {
 
     @objc private func searchFieldSubmitted() {
         scheduleSearch()
+    }
+
+    @objc private func refreshLibrary() {
+        guard !isBusy else { return }
+        if searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            searchTask?.cancel()
+            searchGeneration += 1
+            isSearching = false
+            updateActivityIndicator()
+            loadLibrary(reset: true)
+        } else {
+            scheduleSearch(immediate: true)
+        }
     }
 
     @objc private func loadMoreLibrary() {
