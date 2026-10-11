@@ -29,6 +29,8 @@ final class HubcapViewController: NSViewController {
     private var totalCount = 0
     private var loadedOffset = 0
     private var isBusy = false
+    private var isSearching = false
+    private var searchGeneration = 0
     private var searchTask: Task<Void, Never>?
 
     init(store: ConfigStore, onConfigChanged: @escaping () -> Void) {
@@ -157,9 +159,9 @@ final class HubcapViewController: NSViewController {
         let libraryHeader = settingsGroupLabel("Library")
 
         searchField = NSSearchField()
-        searchField.placeholderString = "Search loaded games by title or App ID"
+        searchField.placeholderString = "Search Hubcap by title or App ID"
         searchField.translatesAutoresizingMaskIntoConstraints = false
-        searchField.setAccessibilityLabel("Search loaded Hubcap games")
+        searchField.setAccessibilityLabel("Search Hubcap games by title or App ID")
         searchField.delegate = self
         searchField.target = self
         searchField.action = #selector(searchFieldSubmitted)
@@ -374,6 +376,11 @@ final class HubcapViewController: NSViewController {
 
         case .disconnect:
             do {
+                searchTask?.cancel()
+                searchGeneration += 1
+                isSearching = false
+                updateActivityIndicator()
+                searchField.stringValue = ""
                 try HubcapCredentialStore.remove()
                 updateAPIStatus()
                 allGames.removeAll()
@@ -428,6 +435,7 @@ final class HubcapViewController: NSViewController {
                 try HubcapCredentialStore.save(key)
 
                 updateAPIStatus()
+                searchField.stringValue = ""
                 allGames.removeAll()
                 games.removeAll()
                 totalCount = 0
@@ -444,16 +452,10 @@ final class HubcapViewController: NSViewController {
         }
     }
 
-    // MARK: Search / filtering
+    // MARK: Search
 
     @objc private func searchFieldSubmitted() {
         scheduleSearch()
-    }
-
-    @objc private func refreshLibrary() {
-        guard !isBusy else { return }
-        searchTask?.cancel()
-        loadLibrary(reset: true)
     }
 
     @objc private func loadMoreLibrary() {
@@ -468,65 +470,141 @@ final class HubcapViewController: NSViewController {
         scheduleSearch()
     }
 
-    private func scheduleSearch() {
+    private func scheduleSearch(immediate: Bool = false) {
         searchTask?.cancel()
+        searchGeneration += 1
+        let generation = searchGeneration
+        isSearching = false
+        updateActivityIndicator()
 
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if query.isEmpty {
-            games = allGames
+            games = deduplicateAndSort(allGames)
             tableView.reloadData()
-            resultCountLabel.stringValue = allGames.isEmpty ? "No games" : "\(allGames.count) shown"
+            resultCountLabel.stringValue = games.isEmpty ? "No games" : "\(games.count) shown"
             emptyState.configure(
                 symbol: "books.vertical",
                 prompt: "Browse the Hubcap library",
-                hint: "Search for a game or App ID."
+                hint: "Search the full Hubcap catalog by title or App ID."
             )
             updateEmptyState()
             updateCatalogStatus()
             return
         }
 
-        guard query.count >= 2 else {
+        loadMoreButton.isEnabled = false
+
+        guard query.count >= 3 else {
             games.removeAll()
             tableView.reloadData()
             resultCountLabel.stringValue = "Keep typing…"
             emptyState.configure(
                 symbol: "text.magnifyingglass",
-                prompt: "Search needs 2 characters",
-                hint: "Search by game title or App ID."
+                prompt: "Search needs 3 characters",
+                hint: "Enter at least 3 characters to search Hubcap by title or App ID."
             )
             emptyState.isHidden = false
+            setStatus("Enter at least 3 characters to search Hubcap.", tone: .neutral)
             return
         }
 
-        let normalized = query.localizedLowercase
-        let isAppID = query.allSatisfy { $0.isNumber }
-
-        games = allGames.filter { game in
-            if isAppID {
-                return game.id == query
-            }
-            return game.name.localizedLowercase.contains(normalized)
-                || game.id.contains(query)
+        guard let key = currentKey() else {
+            games.removeAll()
+            tableView.reloadData()
+            resultCountLabel.stringValue = "Hubcap not connected"
+            emptyState.configure(
+                symbol: "key",
+                prompt: "Connect to Hubcap to search",
+                hint: "Add a valid API key in Hubcap Settings."
+            )
+            updateEmptyState()
+            loadMoreButton.isEnabled = false
+            return
         }
-        games = deduplicateAndSort(games)
 
-        resultCountLabel.stringValue = games.isEmpty
-            ? "No matches"
-            : "\(games.count) result\(games.count == 1 ? "" : "s")"
-
+        resultCountLabel.stringValue = "Searching…"
         emptyState.configure(
             symbol: "magnifyingglass",
-            prompt: "No games found",
-            hint: "Try another title or App ID."
+            prompt: "Searching Hubcap…",
+            hint: "Looking across the Hubcap catalog."
         )
-        emptyState.isHidden = !games.isEmpty
-        setStatus(
-            games.isEmpty ? "No games matched your search." : "\(games.count) local result(s).",
-            tone: games.isEmpty ? .neutral : .ok
-        )
-        tableView.reloadData()
+        emptyState.isHidden = false
+        setStatus("Searching Hubcap for “\(query)”…", tone: .neutral)
+
+        searchTask = Task { [weak self] in
+            do {
+                if !immediate {
+                    try await Task.sleep(for: .milliseconds(250))
+                }
+                guard let self, !Task.isCancelled else { return }
+                await self.performHubcapSearch(query: query, apiKey: key, generation: generation)
+            } catch {
+                // Cancellation during the debounce interval is expected.
+            }
+        }
+    }
+
+    private func performHubcapSearch(query: String, apiKey: String, generation: Int) async {
+        guard generation == searchGeneration, !Task.isCancelled else { return }
+        isSearching = true
+        updateActivityIndicator()
+
+        do {
+            let results = try await client.searchGames(
+                query: query,
+                apiKey: apiKey,
+                appID: query.allSatisfy { $0.isNumber }
+            )
+
+            guard
+                !Task.isCancelled,
+                generation == searchGeneration,
+                query == searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
+                HubcapCredentialStore.apiKey == apiKey
+            else { return }
+
+            isSearching = false
+            updateActivityIndicator()
+            games = deduplicateAndSort(results)
+            tableView.reloadData()
+            resultCountLabel.stringValue = games.isEmpty
+                ? "No matches"
+                : "\(games.count) result\(games.count == 1 ? "" : "s")"
+
+            emptyState.configure(
+                symbol: "magnifyingglass",
+                prompt: "No games found",
+                hint: "Try another title or App ID."
+            )
+            updateEmptyState()
+            setStatus(
+                games.isEmpty
+                    ? "No Hubcap games matched “\(query)”."
+                    : "Found \(games.count) Hubcap result(s) for “\(query)”.",
+                tone: games.isEmpty ? .neutral : .ok
+            )
+        } catch {
+            guard
+                !Task.isCancelled,
+                generation == searchGeneration,
+                query == searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
+                HubcapCredentialStore.apiKey == apiKey
+            else { return }
+
+            isSearching = false
+            updateActivityIndicator()
+            games.removeAll()
+            tableView.reloadData()
+            resultCountLabel.stringValue = "Search failed"
+            emptyState.configure(
+                symbol: "exclamationmark.triangle",
+                prompt: "Hubcap search failed",
+                hint: error.localizedDescription
+            )
+            updateEmptyState()
+            setStatus(error.localizedDescription, tone: .bad)
+        }
     }
 
     private func applyLibraryRows() {
@@ -786,14 +864,13 @@ final class HubcapViewController: NSViewController {
     }
 
     private func setBusy(_ busy: Bool, status: String? = nil) {
-        isBusy = busy
-        spinner.isHidden = !busy
-
         if busy {
-            spinner.startAnimation(nil)
-        } else {
-            spinner.stopAnimation(nil)
+            searchTask?.cancel()
+            searchGeneration += 1
+            isSearching = false
         }
+        isBusy = busy
+        updateActivityIndicator()
 
         apiSettingsButton.isEnabled = !busy
         searchField.isEnabled = !busy
@@ -807,6 +884,16 @@ final class HubcapViewController: NSViewController {
 
         if let status {
             setStatus(status, tone: .neutral)
+        }
+    }
+
+    private func updateActivityIndicator() {
+        let active = isBusy || isSearching
+        spinner.isHidden = !active
+        if active {
+            spinner.startAnimation(nil)
+        } else {
+            spinner.stopAnimation(nil)
         }
     }
 
