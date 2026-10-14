@@ -168,6 +168,30 @@
       "name": "CUtlBuffer::PutTag",
       "aob_hex": "?? ?? ?? D1 ?? ?? ?? A9 ?? ?? ?? A9 ?? ?? ?? 91 ?? ?? ?? AA ?? ?? ?? AA ?? ?? ?? F0 ?? ?? ?? F9 ?? ?? ?? F9 ?? ?? ?? F8 08 7C 40 39",
       "func_addr_this_build": "0x1091fdc"
+    },
+    {
+      "name": "CUser::SpawnProcess",
+      "aob_hex": "FC 6F BA A9 FA 67 01 A9 F8 5F 02 A9 F6 57 03 A9 F4 4F 04 A9 FD 7B 05 A9 FD 43 01 91 FF 03 13 D1 F6 03 07 AA F9 03 06 AA E5 23 00 F9 FA 03 04 AA F8 03 03 AA FC 03 02 AA FB 03 01 AA F5 03 00 AA"
+    },
+    {
+      "name": "CUser::BuildSpawnEnvBlock",
+      "aob_hex": "FC 6F BA A9 FA 67 01 A9 F8 5F 02 A9 F6 57 03 A9 F4 4F 04 A9 FD 7B 05 A9 FD 43 01 91 FF 43 14 D1 F9 03 07 AA F8 03 05 AA E4 8B 01 A9 F3 03 03 AA F5 03 01 AA F4 03 00 AA A8 C3 03 D1 C9 60 00 F0"
+    },
+    {
+      "name": "CSteamController::OptedInMask",
+      "aob_hex": "0A E0 56 B9 5F 05 00 31 C0 02 00 54 F6 57 BD A9 F4 4F 01 A9 FD 7B 02 A9 FD 83 00 91 15 24 44 91 08 7C 4B F9 09 11 00 91 4A 7D 40 93 0B 15 0A 8B 6D 11 40 B9 EC 03 08 AA BF 01 01 6B 68 00 00 54"
+    },
+    {
+      "name": "CSteamEngine::SetAppIDForCurrentPipe",
+      "aob_hex": "FF 03 02 D1 FC 6F 02 A9 FA 67 03 A9 F8 5F 04 A9 F6 57 05 A9 F4 4F 06 A9 FD 7B 07 A9 FD C3 01 91 F5 03 02 AA F6 03 01 AA F3 03 00 AA 08 30 41 B9 3F 28 00 71 F4 33 81 1A E8 53 03 29 00 A0 3B 91"
+    },
+    {
+      "name": "IClientUtils::__ipc_server_dispatch",
+      "aob_hex": "FF C3 03 D1 FA 67 0A A9 F8 5F 0B A9 F6 57 0C A9 F4 4F 0D A9 FD 7B 0E A9 FD 83 03 91 F6 03 03 AA F3 03 02 AA F5 03 01 AA F4 03 00 AA A1 23 01 D1 E0 03 15 AA 82 00 80 52 F0 9B E2 97 B7 83 5B B8"
+    },
+    {
+      "name": "IClientNetworkingSocketsSerialized::__ipc_server_dispatch",
+      "aob_hex": "FF 43 02 D1 F8 5F 05 A9 F6 57 06 A9 F4 4F 07 A9 FD 7B 08 A9 FD 03 02 91 F6 03 03 AA F3 03 02 AA F5 03 01 AA F4 03 00 AA A1 D3 00 D1 E0 03 15 AA 82 00 80 52 0C FE E0 97 B7 C3 5C B8 28 1C 8F 52"
     }
   ]
 }
