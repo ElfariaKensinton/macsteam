@@ -46,6 +46,7 @@ static const sx_hook_module_t g_modules[] = {
     { "manifest", sx_hooks_manifest_count, sx_hooks_manifest_defs },
     { "stats",    sx_hooks_stats_count,    sx_hooks_stats_defs    },
     { "ticket",   sx_hooks_ticket_count,   sx_hooks_ticket_defs   },
+    { "onlinefix", sx_hooks_onlinefix_count, sx_hooks_onlinefix_defs },
 };
 
 #define NUM_MODULES (sizeof(g_modules) / sizeof(g_modules[0]))
@@ -69,6 +70,7 @@ int sx_hooks_install_all(sx_resolve_result_t *resolved, int *total_out) {
         const sx_hook_module_t *mod = &g_modules[m];
         int count = mod->count_fn();
         sx_hook_def_t *defs = mod->defs_fn();
+        int module_installed = 0;
 
         for (int i = 0; i < count; i++) {
             sx_hook_def_t *hk = &defs[i];
@@ -96,6 +98,7 @@ int sx_hooks_install_all(sx_resolve_result_t *resolved, int *total_out) {
 
             if (ret == 0) {
                 installed++;
+                module_installed++;
                 SX_LOG("[%s] %s: %s @ %p", mod->module_name, hk->name,
                        hk->kind == SX_HOOK_INSTRUMENT ? "instrumented" : "hooked",
                        (void *)addr);
@@ -106,6 +109,8 @@ int sx_hooks_install_all(sx_resolve_result_t *resolved, int *total_out) {
                        ret, (void *)addr);
             }
         }
+        if (strcmp(mod->module_name, "onlinefix") == 0)
+            sx_hooks_onlinefix_set_ready(module_installed == count);
     }
 
     sx_hooks_relaunch_install();
